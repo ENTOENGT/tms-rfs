@@ -1,0 +1,4 @@
+# Netlify detects Next.js automatically. Set DATABASE_URL and SESSION_SECRET
+# under Site configuration > Environment variables.
+[build]
+  command = "npm run build"

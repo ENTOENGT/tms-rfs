@@ -1,0 +1,32 @@
+# Transport Management System
+
+Internal TMS for Operations, Transport and Finance. Next.js on Netlify, Postgres on Supabase.
+Design, schema, permission matrix, workflow and financial logic: see `docs/ARCHITECTURE.md`.
+
+## Set up (no command line needed)
+
+1. **Database** — create a new Supabase project. Open *SQL Editor*, paste the whole of
+   `db/migrations/001_schema.sql`, run it. Then do the same with `002_seed.sql`.
+2. **Code** — create a private GitHub repo and upload this folder through the GitHub website
+   (don't upload `node_modules` or `.next`).
+3. **Hosting** — in Netlify, *Add new site → Import from GitHub*, pick the repo. Before deploying,
+   add two environment variables:
+   - `DATABASE_URL` — Supabase → *Connect* → *Transaction pooler* connection string (port 6543), with your DB password filled in.
+   - `SESSION_SECRET` — any random text of 32+ characters.
+4. **First sign-in** — `admin@company.local` / `ChangeMe!2026`. You'll be asked to set a new
+   password. Then go to *Users* and create accounts for your team.
+
+## For developers
+
+```
+npm install
+cp .env.example .env.local     # fill in
+npm run dev
+npm test                       # needs DATABASE_URL pointing at a THROWAWAY database — tests rebuild the schema
+```
+
+Rules for adding features:
+- Pages call `/api/*` only. Never query the database from a page or the browser.
+- New job fields go through the whitelist in `src/server/jobs.ts` (`BASE_SELECT`). Anything
+  commercial goes in `job_commercials`/`job_revenue_lines`, never in `transport_requests`.
+- New migrations: add `003_….sql`, `004_….sql` — never edit a migration that's been run.
