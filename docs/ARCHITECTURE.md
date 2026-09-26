@@ -185,13 +185,35 @@ job search index.
 
 **Custom statuses:** added between two existing steps; the direct route stays open and cancel is allowed.
 
-## 11. Phase status
+## 11. Phase 4 — POD, documents, notes
+
+**Storage:** private Supabase Storage bucket `tms-documents` (10 MB/file; PDF, JPG, PNG, XLSX, DOCX).
+The browser uploads directly to storage using a one-time signed upload link, so large files never pass
+through Netlify's function size limits. The server then confirms the upload using a signed, expiring,
+per-user "ticket" and checks the file really arrived before recording it. Downloads go through
+`/api/documents/:id/download`, which checks permissions on every click and redirects to a 2-minute link.
+Photos over 1.5 MB are shrunk in the browser to max 2000px (a 5 MB phone photo becomes ~0.5 MB).
+
+**Confidentiality:** customer invoices and quotations are "commercial" document types — Transport can't
+upload, list, download or delete them (the API answers "not found"), and their upload/removal entries in
+the activity log are hidden. Notes can be marked commercial; those are hidden and never notified to Transport.
+
+**POD flow:** upload (pod.upload, Transport) → job goes to POD Received, POD status Uploaded, Operations and
+verifiers notified → verify or reject with a reason (pod.verify, Operations + Super Admin) → rejected sends
+the job back to POD Pending and notifies Transport → Completed needs POD Uploaded/Verified/Not required.
+A verified POD can only be removed by a Super Admin. Removing the last POD reverts the POD status.
+Documents are soft-deleted: the record and the file stay for the audit trail.
+
+**Reminders:** delivered jobs with no POD after `pod_reminder_hours` (default 24) notify Transport, then
+repeat once per period. The check runs during normal app use (at most every 10 minutes) — no scheduler.
+
+## 12. Phase status
 
 | Phase | Status |
 |---|---|
 | 1 Foundation — auth, users, roles, permissions, full DB | Done |
 | 2 Masters — drivers, vehicles, customers, locations, vehicle types, settings, statuses | Done |
 | 3 Workflow — availability, assignment with conflict checks, status updates, edit/cancel, notifications | Done |
+| 4 POD upload/verify/reject, job documents, Documents page, notes, POD reminders | Done |
 | 5 core — cost & selling entry, VAT/profit, dashboard KPIs | Done early |
-| 4 POD upload/verify, documents, notes | Next |
 | 5 Financial dashboard & charts · 6 Reports & export · 7 Email/WhatsApp · 8 Saved views, column prefs | Planned |

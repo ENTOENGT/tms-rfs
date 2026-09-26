@@ -181,16 +181,24 @@ export async function getJob(actor: Actor, id: string) {
        from audit_log where job_id = $1 and sensitivity = any($2) order by occurred_at, id`, [id, sens]))
     .map((a) => pick(a, ['id', 'occurred_at', 'user_name', 'department_code', 'action', 'field', 'old_value', 'new_value']));
   job.notes = (await q(
-    `select n.id, n.body, n.visibility, n.created_at, u.full_name author
+    `select n.id, n.body, n.visibility, n.created_at, u.full_name author, n.user_id
        from job_notes n join users u on u.id = n.user_id
       where n.job_id = $1 and n.deleted_at is null and ($2 or n.visibility = 'all') order by n.created_at`,
-    [id, fin.sellingView])).map((n) => pick(n, ['id', 'body', 'visibility', 'created_at', 'author']));
+    [id, fin.sellingView])).map((n) => ({ ...pick(n, ['id', 'body', 'visibility', 'created_at', 'author']),
+      can_delete: n.user_id === actor.id || actor.isSuperAdmin }));
+  const closedJob = ['closed', 'cancelled'].includes(row.status_stage);
   job.documents = (await q(
-    `select d.id, d.document_type_code, dt.name document_type, d.file_name, d.mime_type, d.size_bytes, d.created_at
-       from job_documents d join document_types dt on dt.code = d.document_type_code
+    `select d.id, d.document_type_code, dt.name document_type, dt.is_commercial, d.file_name, d.mime_type, d.size_bytes, d.created_at,
+            d.uploaded_by, u.full_name uploaded_by_name
+       from job_documents d join document_types dt on dt.code = d.document_type_code left join users u on u.id = d.uploaded_by
       where d.job_id = $1 and d.deleted_at is null and ($2 or not dt.is_commercial) order by d.created_at`,
     [id, fin.sellingView && actor.has('documents.view_commercial')]))
-    .map((d) => pick(d, ['id', 'document_type_code', 'document_type', 'file_name', 'mime_type', 'size_bytes', 'created_at']));
+    .map((d) => ({ ...pick(d, ['id', 'document_type_code', 'document_type', 'file_name', 'mime_type', 'size_bytes', 'created_at', 'uploaded_by_name']),
+      can_delete: actor.isSuperAdmin || (d.uploaded_by === actor.id && !closedJob &&
+        !(d.document_type_code === 'pod' && row.pod_status === 'verified')) }));
+  const pod = await one(`select p.pod_date, p.received_by, p.remarks, p.verified_at, p.rejection_reason, v.full_name verified_by_name
+      from job_pod p left join users v on v.id = p.verified_by where p.job_id = $1`, [id]);
+  job.pod = pod ? pick(pod, ['pod_date', 'received_by', 'remarks', 'verified_at', 'rejection_reason', 'verified_by_name']) : null;
   const stage = row.status_stage;
   const editPerm = ['draft', 'open'].includes(stage) ? 'jobs.edit' : stage === 'active' ? 'jobs.edit_assigned' : stage === 'cancelled' ? null : 'jobs.edit_completed';
   const locked = ['closed', 'cancelled'].includes(stage) && !actor.has('jobs.edit_completed');
@@ -202,6 +210,12 @@ export async function getJob(actor: Actor, id: string) {
     override_conflicts: actor.has('jobs.override_conflicts'),
     update_status: actor.has('jobs.update_status'), upload_pod: actor.has('pod.upload'),
     pod_requirement: actor.has('pod.verify') && !['closed', 'cancelled'].includes(stage),
+    verify_pod: actor.has('pod.verify') && ['uploaded', 'verified'].includes(row.pod_status) && !['closed', 'cancelled'].includes(stage),
+    upload_documents: (actor.has('documents.upload') || actor.has('pod.upload')) && stage !== 'cancelled' && (stage !== 'closed' || actor.has('jobs.edit_completed')),
+    upload_types: (await q('select code, name, is_commercial from document_types where is_active order by name'))
+      .filter((t) => (t.code === 'pod' ? actor.has('pod.upload') : actor.has('documents.upload')) && (!t.is_commercial || (fin.sellingView && actor.has('documents.view_commercial'))))
+      .map((t) => ({ code: t.code, name: t.name })),
+    add_note: stage !== 'cancelled', ...(fin.sellingView ? { add_commercial_note: true } : {}),
   };
   job.next_statuses = locked ? [] : await allowedTransitions(actor, row);
   return job;

@@ -5,7 +5,6 @@ const MASTER_PAGES = ['drivers', 'vehicles', 'customers', 'locations'];
 const PLAN: Record<string, [string, number, string]> = {
   financials: ['Financials', 5, 'Revenue, cost and profit by month, customer, driver and vehicle type.'],
   reports: ['Reports', 6, 'Operational, financial, driver, vehicle, customer and POD-pending reports with Excel/CSV/PDF export.'],
-  documents: ['Documents', 4, 'All job documents in one place. Commercial documents stay hidden from Transport.'],
 };
 export default function Section({ params }: { params: { section: string } }) {
   if (MASTER_PAGES.includes(params.section)) return <MasterPage entity={params.section} />;

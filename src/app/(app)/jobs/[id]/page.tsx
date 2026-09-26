@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { api, fmtDate, fmtDateTime, fmtMoney, slot } from '@/components/api';
 import { useMe } from '@/components/Shell';
 import JobActions from '@/components/JobActions';
+import { DocumentsTab, NotesTab, PodCard } from '@/components/JobFiles';
 
 const LANE = ['pending_assignment', 'assigned', 'dispatched', 'picked_up', 'in_transit', 'delivered', 'pod_received', 'completed'];
 
@@ -134,12 +135,12 @@ export default function JobDetail({ params }: { params: { id: string } }) {
       <div className="cols">
         <div>
           <div className="tabs" role="tablist">
-            {[['overview', 'Overview'], ['activity', `Activity (${job.activity.length})`], ['notes', 'Notes & documents']].map(([k, l]) =>
+            {[['overview', 'Overview'], ['documents', `Documents (${job.documents.length})`], ['notes', `Notes (${job.notes.length})`], ['activity', `Activity (${job.activity.length})`]].map(([k, l]) =>
               <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
           </div>
           {tab === 'overview' && <>
             <div className="panel"><h2>Request</h2><KV rows={[
-              ['Customer', job.customer_name], ['Required', `${fmtDate(job.required_date)}, ${slot(job.slot_from, job.slot_to)}`],
+              ['Customer', job.customer_name], ['Required', job.slot_from ? `${fmtDate(job.required_date)}, ${slot(job.slot_from, job.slot_to)}` : fmtDate(job.required_date)],
               ['BOE number', job.boe_number], ['Customer reference', job.customer_reference], ['Email subject', job.email_subject],
               ['Shipment / booking', [job.shipment_number, job.booking_reference].filter(Boolean).join(' / ') || null],
               ['Vehicle type needed', job.requested_vehicle_type]]} /></div>
@@ -167,9 +168,10 @@ export default function JobDetail({ params }: { params: { id: string } }) {
               <span><b>{a.action}</b> · {a.user_name}{a.department_code ? ` (${a.department_code})` : ''}
                 {(a.old_value || a.new_value) && <div className="muted small">{a.field ? a.field + ': ' : ''}{a.old_value ?? '—'} → {a.new_value ?? '—'}</div>}</span></li>)}
           </ul></div>}
-          {tab === 'notes' && <div className="panel"><p className="muted" style={{ margin: 0 }}>Notes, POD upload and documents arrive in Phase 4. {job.documents.length} document(s), {job.notes.length} note(s) on file.</p></div>}
+          {tab === 'documents' && <DocumentsTab job={job} onChange={setJob} />}
+          {tab === 'notes' && <NotesTab job={job} onChange={setJob} />}
         </div>
-        <div><Financials job={job} reload={load} /></div>
+        <div><PodCard job={job} onChange={setJob} /><Financials job={job} reload={load} /></div>
       </div>
     </div>
   );

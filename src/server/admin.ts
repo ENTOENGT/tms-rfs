@@ -172,6 +172,8 @@ export async function lookups(actor: Actor) {
     vehicles: await q(`select v.id, v.vehicle_number name, vt.name vehicle_type from vehicles v left join vehicle_types vt on vt.id = v.vehicle_type_id
       where v.deleted_at is null and v.status <> 'inactive' order by v.vehicle_number`),
     expiry_warning_days: await getSetting('expiry_warning_days', 30),
+    document_types: await q('select code, name from document_types where is_active and ($1 or not is_commercial) order by name',
+      [actor.fin.sellingView && actor.has('documents.view_commercial')]),
     currency: await getSetting('currency', 'AED'),
     timezone: await getSetting('timezone', 'Asia/Dubai'),
   };
@@ -185,6 +187,7 @@ export async function lookups(actor: Actor) {
 }
 
 export async function listNotifications(actor: Actor) {
+  try { const { runPodReminders } = await import('./documents'); await runPodReminders(); } catch (e) { console.error('POD reminders', e); }
   const rows = await q(`select id, type, title, job_id, read_at, created_at from notifications
     where user_id = $1 order by created_at desc limit 50`, [actor.id]);
   return { unread: rows.filter((r) => !r.read_at).length, rows };

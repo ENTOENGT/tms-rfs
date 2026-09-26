@@ -22,7 +22,7 @@ const NAV: { href: string; label: string; perm?: string; phase?: number }[] = [
   { href: '/locations', label: 'Locations', perm: 'jobs.view' },
   { href: '/financials', label: 'Financials', phase: 5 },
   { href: '/reports', label: 'Reports', phase: 6 },
-  { href: '/documents', label: 'Documents', phase: 4 },
+  { href: '/documents', label: 'Documents', perm: 'jobs.view' },
 ];
 const ADMIN: { href: string; label: string; perm: string; phase?: number }[] = [
   { href: '/users', label: 'Users', perm: 'users.manage' },

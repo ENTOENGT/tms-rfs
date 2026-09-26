@@ -166,22 +166,22 @@ export default function JobActions({ job, onChange }: { job: any; onChange: (j: 
   const podNeeded = ['delivered', 'pod_pending'].includes(job.status_code) && ['pending', 'rejected'].includes(job.pod_status);
   const togglePod = async (v: boolean) => { try { onChange(await api(`/api/jobs/${job.id}/pod-requirement`, { body: { not_required: v } })); } catch (e: any) { setErr(e.message); } };
   const done = (j: any) => { setDialog(null); onChange(j); };
-  const any = perms.assign || forward.length || back || cancel || perms.edit_request || perms.pod_requirement;
+  const any = perms.assign || forward.length || back || cancel || perms.edit_request || (perms.pod_requirement && ['pending', 'rejected', 'not_required'].includes(job.pod_status));
   if (!any) return null;
   return (
     <>
       {err && <div className="msg err">{err}</div>}
       <div className="panel" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
         {perms.assign && <button className="btn primary" onClick={() => setDialog({ kind: 'assign' })}>{job.driver_id || job.vehicle_id ? 'Change assignment' : 'Assign driver & vehicle'}</button>}
-        {forward.map((s: any) => <button key={s.code} className={`btn${!perms.assign ? ' primary' : ''}`} onClick={() => setDialog({ kind: 'status', to: s })}>
+        {forward.map((s: any, i: number) => <button key={s.code} className={`btn${!perms.assign && i === 0 ? ' primary' : ''}`} onClick={() => setDialog({ kind: 'status', to: s })}>
           {s.code === 'pending_assignment' ? 'Submit to Transport' : `Mark ${s.name}`}</button>)}
         {perms.edit_request && <Link className="btn" href={`/jobs/${job.id}/edit`}>Edit request</Link>}
         {back && (job.driver_id || job.vehicle_id) && <button className="btn" onClick={() => setDialog({ kind: 'status', to: back })}>Unassign</button>}
-        {perms.pod_requirement && job.pod_status !== 'not_required' && <button className="btn" onClick={() => togglePod(true)}>POD not required</button>}
+        {perms.pod_requirement && ['pending', 'rejected'].includes(job.pod_status) && <button className="btn" onClick={() => togglePod(true)}>POD not required</button>}
         {perms.pod_requirement && job.pod_status === 'not_required' && <button className="btn" onClick={() => togglePod(false)}>Require POD</button>}
         <span style={{ flex: 1 }} />
         {cancel && <button className="btn danger" onClick={() => setDialog({ kind: 'status', to: cancel })}>Cancel job</button>}
-        {podNeeded && <span className="flag" style={{ width: '100%' }}>Delivered — waiting for POD. Upload arrives in Phase 4; until then an admin can mark "POD not required".</span>}
+        {podNeeded && <span className="flag" style={{ width: '100%' }}>Delivered — waiting for the POD. Upload it in the Proof of delivery panel.</span>}
       </div>
       {dialog?.kind === 'assign' && <AssignDialog job={job} onDone={done} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'status' && <StatusDialog job={job} to={dialog.to} onDone={done} onClose={() => setDialog(null)} />}

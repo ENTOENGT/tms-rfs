@@ -15,6 +15,23 @@ const FIELDS: [string, string, string, string?][] = [
 ];
 const STAGE: Record<string, string> = { draft: 'Draft', open: 'Waiting', active: 'In progress', delivered: 'Delivered', closed: 'Closed', cancelled: 'Cancelled' };
 
+function StorageCheck() {
+  const [r, setR] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async () => { setBusy(true); try { setR(await api('/api/storage-check', { body: {} })); } catch (e: any) { setR({ ok: false, steps: [{ step: 'Check', ok: false, detail: e.message }] }); } setBusy(false); };
+  return (
+    <div className="panel">
+      <div className="page-head" style={{ marginBottom: 8 }}><h2 style={{ margin: 0 }}>File storage (POD & documents)</h2><span className="spacer" />
+        <button className="btn" disabled={busy} onClick={run}>{busy ? 'Testing…' : 'Test file storage'}</button></div>
+      <p className="muted small" style={{ marginTop: 0 }}>Uploads a tiny test file, reads it back and deletes it. Run this once after setting up storage.</p>
+      {r && <div className={`msg ${r.ok ? 'ok' : 'err'}`}>
+        <b>{r.ok ? 'File storage is working.' : 'File storage is not working yet.'}</b>
+        <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{r.steps.map((s: any, i: number) => <li key={i}>{s.ok ? '✓' : '✕'} {s.step}{s.detail ? ` — ${s.detail}` : ''}</li>)}</ul>
+      </div>}
+    </div>
+  );
+}
+
 export default function Settings() {
   const { can, reloadLookups } = useMe();
   const [data, setData] = useState<any>(null);
@@ -60,6 +77,8 @@ export default function Settings() {
             </tr>))}</tbody>
         </table></div>
       </div>
+
+      <StorageCheck />
 
       <div className="panel"><MasterPage entity="vehicle_types" embedded /></div>
 
