@@ -26,13 +26,41 @@ export interface FileStore {
 }
 
 // ------------------------------------------------------------ supabase
-function supabaseStore(url: string, key: string): FileStore {
-  const base = url.replace(/\/+$/, '') + '/storage/v1';
+/**
+ * Accepts whatever was pasted into SUPABASE_URL and returns just "https://<project>.supabase.co".
+ * Handles: extra paths (/rest/v1, /storage/v1), the dashboard link, the database connection
+ * string, missing https://, quotes and spaces. Anything else must be a plain web address.
+ */
+export function normalizeSupabaseUrl(raw: string): string {
+  let s = raw.trim().replace(/^['"]+|['"]+$/g, '').trim();
+  const dash = s.match(/supabase\.com\/dashboard\/project\/([a-z0-9]+)/i);
+  if (dash) return `https://${dash[1].toLowerCase()}.supabase.co`;
+  if (/^postgres(ql)?:\/\//i.test(s)) {                     // database connection string pasted by mistake
+    const user = s.match(/^postgres(?:ql)?:\/\/postgres\.([a-z0-9]+)[:@]/i);
+    const direct = s.match(/@db\.([a-z0-9]+)\.supabase\.co/i);
+    const ref = user?.[1] ?? direct?.[1];
+    if (ref) return `https://${ref.toLowerCase()}.supabase.co`;
+    throw new ApiError(500, 'STORAGE_URL_INVALID', 'SUPABASE_URL contains a database connection string. Use the Project URL instead (https://….supabase.co).');
+  }
+  if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+  let u: URL;
+  try { u = new URL(s); } catch {
+    throw new ApiError(500, 'STORAGE_URL_INVALID', 'SUPABASE_URL is not a valid web address. It should look like https://abcdefghij.supabase.co');
+  }
+  const host = u.hostname.replace(/^db\./i, '');
+  return `https://${host}`;
+}
+
+function supabaseStore(rawUrl: string, key: string): FileStore {
+  const origin = normalizeSupabaseUrl(rawUrl);
+  const base = origin + '/storage/v1';
   // Legacy service_role keys are JWTs (eyJ…) and go in both headers; newer sb_secret_… keys go in apikey only.
-  const headers: Record<string, string> = key.startsWith('eyJ') ? { apikey: key, Authorization: `Bearer ${key}` } : { apikey: key };
+  const k = key.trim().replace(/^['"]+|['"]+$/g, '').trim();
+  const headers: Record<string, string> = k.startsWith('eyJ') ? { apikey: k, Authorization: `Bearer ${k}` } : { apikey: k };
   const bucket = () => new StorageClient(base, headers).from(BUCKET);
   const fail = (what: string, e: any): never => {
-    throw new ApiError(502, 'STORAGE_ERROR', `File storage error while ${what}: ${e?.message ?? e}`);
+    // The project address is not secret; showing it makes wrong settings obvious.
+    throw new ApiError(502, 'STORAGE_ERROR', `File storage error while ${what}: ${e?.message ?? e} (storage address used: ${origin})`);
   };
   return {
     driver: 'supabase',
