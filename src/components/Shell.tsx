@@ -12,7 +12,7 @@ export interface Me {
 const MeCtx = createContext<{ me: Me; can: (p: string) => boolean; lk: any; reloadLookups: () => void } | null>(null);
 export const useMe = () => useContext(MeCtx)!;
 
-const NAV: { href: string; label: string; perm?: string; phase?: number }[] = [
+const NAV: { href: string; label: string; perm?: string | string[]; phase?: number }[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/requests', label: 'Transport requests', perm: 'jobs.view' },
   { href: '/jobs', label: 'Jobs', perm: 'jobs.view' },
@@ -20,7 +20,7 @@ const NAV: { href: string; label: string; perm?: string; phase?: number }[] = [
   { href: '/vehicles', label: 'Vehicles', perm: 'jobs.view' },
   { href: '/customers', label: 'Customers', perm: 'jobs.view' },
   { href: '/locations', label: 'Locations', perm: 'jobs.view' },
-  { href: '/financials', label: 'Financials', phase: 5 },
+  { href: '/financials', label: 'Financials', perm: ['finance.buying.view', 'finance.selling.view'] },
   { href: '/reports', label: 'Reports', phase: 6 },
   { href: '/documents', label: 'Documents', perm: 'jobs.view' },
 ];
@@ -85,7 +85,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <small>Transport Management · {me.department ?? me.role}</small>
           </div>
           <nav className="nav">
-            {NAV.filter((i) => !i.perm || can(i.perm)).map(link)}
+            {NAV.filter((i) => !i.perm || (Array.isArray(i.perm) ? i.perm.some(can) : can(i.perm))).map(link)}
             {adminLinks.length > 0 && <div className="group">Administration</div>}
             {adminLinks.map(link)}
           </nav>

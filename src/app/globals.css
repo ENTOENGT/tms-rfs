@@ -102,7 +102,8 @@ table.t .num { text-align: right; }
 .kpi b { display: block; font-size: 22px; font-weight: 600; }
 .kpi span { font-size: 12px; color: var(--muted); }
 .kpi.attn b { color: var(--attention); }
-.kpi.money b { font-size: 18px; }
+.kpi.money b { font-size: 17px; white-space: nowrap; }
+.kpis:has(.kpi.money) { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
 a.kpi { color: inherit; }
 a.kpi:hover { background: #faf8f4; text-decoration: none; }
 

@@ -172,6 +172,8 @@ export async function lookups(actor: Actor) {
     vehicles: await q(`select v.id, v.vehicle_number name, vt.name vehicle_type from vehicles v left join vehicle_types vt on vt.id = v.vehicle_type_id
       where v.deleted_at is null and v.status <> 'inactive' order by v.vehicle_number`),
     expiry_warning_days: await getSetting('expiry_warning_days', 30),
+    users: await q(`select u.id, u.full_name name, d.code department from users u left join departments d on d.id = u.department_id
+      where u.deleted_at is null order by u.full_name`),
     document_types: await q('select code, name from document_types where is_active and ($1 or not is_commercial) order by name',
       [actor.fin.sellingView && actor.has('documents.view_commercial')]),
     currency: await getSetting('currency', 'AED'),
