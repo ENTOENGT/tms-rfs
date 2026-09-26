@@ -207,7 +207,19 @@ Documents are soft-deleted: the record and the file stay for the audit trail.
 **Reminders:** delivered jobs with no POD after `pod_reminder_hours` (default 24) notify Transport, then
 repeat once per period. The check runs during normal app use (at most every 10 minutes) — no scheduler.
 
-## 12. Phase status
+## 12. Phase 5 — Financial dashboard
+
+`/financials` — period presets (today … last year, custom) and combinable filters (customer, driver,
+vehicle, vehicle type, status, requested by, assigned by, job number, BOE, completed only).
+Jobs counted by required date; drafts and cancelled jobs excluded. Totals and every breakdown
+(month, status, customer, driver, vehicle, vehicle type) are summed in integer fils.
+VAT is shown separately and never enters profit. CSV export of the breakdown table.
+
+Access: revenue/VAT columns only with `finance.selling.view`; cost only with `finance.buying.view`;
+profit only with both + `finance.profit.view`. Transport gets a cost-only page, ranked by cost (so
+ordering can't hint at revenue). Charts are dependency-free SVG with text alternatives.
+
+## 13. Phase status
 
 | Phase | Status |
 |---|---|
@@ -215,5 +227,5 @@ repeat once per period. The check runs during normal app use (at most every 10 m
 | 2 Masters — drivers, vehicles, customers, locations, vehicle types, settings, statuses | Done |
 | 3 Workflow — availability, assignment with conflict checks, status updates, edit/cancel, notifications | Done |
 | 4 POD upload/verify/reject, job documents, Documents page, notes, POD reminders | Done |
-| 5 core — cost & selling entry, VAT/profit, dashboard KPIs | Done early |
-| 5 Financial dashboard & charts · 6 Reports & export · 7 Email/WhatsApp · 8 Saved views, column prefs | Planned |
+| 5 Financial dashboard — KPIs, monthly chart, rankings, breakdown tables, CSV | Done |
+| 6 Reports & export (Excel/CSV/PDF) · 7 Email/WhatsApp · 8 Saved views, column prefs, live ops table | Planned |
