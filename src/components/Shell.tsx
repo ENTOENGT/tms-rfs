@@ -9,17 +9,17 @@ export interface Me {
   permissions: string[];
   financial_access: { buyingView: boolean; buyingEdit: boolean; sellingView: boolean; sellingEdit: boolean; profitView: boolean };
 }
-const MeCtx = createContext<{ me: Me; can: (p: string) => boolean; lk: any } | null>(null);
+const MeCtx = createContext<{ me: Me; can: (p: string) => boolean; lk: any; reloadLookups: () => void } | null>(null);
 export const useMe = () => useContext(MeCtx)!;
 
 const NAV: { href: string; label: string; perm?: string; phase?: number }[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/requests', label: 'Transport requests', perm: 'jobs.view' },
   { href: '/jobs', label: 'Jobs', perm: 'jobs.view' },
-  { href: '/drivers', label: 'Drivers', phase: 2 },
-  { href: '/vehicles', label: 'Vehicles', phase: 2 },
-  { href: '/customers', label: 'Customers', phase: 2 },
-  { href: '/locations', label: 'Locations', phase: 2 },
+  { href: '/drivers', label: 'Drivers', perm: 'jobs.view' },
+  { href: '/vehicles', label: 'Vehicles', perm: 'jobs.view' },
+  { href: '/customers', label: 'Customers', perm: 'jobs.view' },
+  { href: '/locations', label: 'Locations', perm: 'jobs.view' },
   { href: '/financials', label: 'Financials', phase: 5 },
   { href: '/reports', label: 'Reports', phase: 6 },
   { href: '/documents', label: 'Documents', phase: 4 },
@@ -27,7 +27,7 @@ const NAV: { href: string; label: string; perm?: string; phase?: number }[] = [
 const ADMIN: { href: string; label: string; perm: string; phase?: number }[] = [
   { href: '/users', label: 'Users', perm: 'users.manage' },
   { href: '/roles', label: 'Roles & permissions', perm: 'roles.manage' },
-  { href: '/settings', label: 'Settings', perm: 'settings.manage', phase: 2 },
+  { href: '/settings', label: 'Settings', perm: 'settings.manage' },
 ];
 
 function Bell() {
@@ -77,10 +77,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   );
   const adminLinks = ADMIN.filter((i) => can(i.perm));
   return (
-    <MeCtx.Provider value={{ me, can, lk }}>
+    <MeCtx.Provider value={{ me, can, lk, reloadLookups: () => api('/api/lookups').then(setLk) }}>
       <div className="shell">
         <aside className="side">
-          <div className="brand">Transport Management<small>{me.department ?? me.role}</small></div>
+          <div className="brand">
+            <img src="/brand/logo-on-dark.png" alt="Reliance Freight Systems LLC" width={184} height={44} />
+            <small>Transport Management · {me.department ?? me.role}</small>
+          </div>
           <nav className="nav">
             {NAV.filter((i) => !i.perm || can(i.perm)).map(link)}
             {adminLinks.length > 0 && <div className="group">Administration</div>}

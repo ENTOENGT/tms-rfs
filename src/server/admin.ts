@@ -168,6 +168,10 @@ export async function lookups(actor: Actor) {
     job_statuses: await q('select code, name, color, stage from job_statuses where is_active order by sort_order'),
     pod_statuses: await q('select code, name from pod_statuses where is_active order by sort_order'),
     departments: await q('select id, code, name from departments where is_active order by name'),
+    drivers: await q(`select id, full_name name, mobile from drivers where deleted_at is null and status <> 'inactive' order by full_name`),
+    vehicles: await q(`select v.id, v.vehicle_number name, vt.name vehicle_type from vehicles v left join vehicle_types vt on vt.id = v.vehicle_type_id
+      where v.deleted_at is null and v.status <> 'inactive' order by v.vehicle_number`),
+    expiry_warning_days: await getSetting('expiry_warning_days', 30),
     currency: await getSetting('currency', 'AED'),
     timezone: await getSetting('timezone', 'Asia/Dubai'),
   };

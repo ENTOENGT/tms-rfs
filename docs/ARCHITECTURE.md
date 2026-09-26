@@ -151,13 +151,47 @@ Spec example verified in tests: 285 cost, 400 selling → VAT 20, total 420, pro
 - Editing a saved location doesn't alter old jobs (snapshots).
 - Re-assignment keeps history (old assignment rows kept, `is_current` flips).
 
-## 10. Phase status
+## 10. Phase 2–3 rules (masters, assignment, workflow)
+
+**Assignment checks** — run on the server inside a transaction, with a per-driver/per-vehicle lock so two
+people assigning at the same moment can't double-book.
+
+| Check | Level |
+|---|---|
+| Driver/vehicle already on another job whose time window overlaps (cancelled jobs ignored; back-to-back is fine) | Blocking |
+| Driver on leave / off duty / inactive; vehicle in maintenance / inactive | Blocking |
+| Driver licence or visa, vehicle registration or insurance expired on the pickup date | Blocking |
+| Vehicle type differs from the type Operations asked for | Warning |
+| Cargo weight or volume above the vehicle's capacity | Warning |
+| Pickup on a different day from the required date | Warning |
+
+Blocking issues need the "Override double-booking" permission (Super Admin by default) and the override is
+written to the job's activity. Warnings just need a second click ("Assign anyway").
+A job with no ETA occupies the driver/vehicle for 4 hours from pickup.
+
+**Status moves** follow the `status_transitions` table. Who can make which move:
+cancel → `jobs.cancel` (reason required); submit a draft → `jobs.create`; unassign → assign permission;
+put a dispatched job back to Assigned → override permission; everything else → `jobs.update_status`.
+Super Admin can force any move (logged as forced). Confirmed/Dispatched/Picked up/In transit/Delivered
+need a driver and vehicle. Picked up / Delivered record actual times. Completed and POD Received need the
+POD uploaded or marked "not required".
+
+**Editing a request:** before assignment → `jobs.edit` (Operations); once assigned → `jobs.edit_assigned`
+(not given by default, Transport is notified of the change); after delivery → `jobs.edit_completed`.
+
+**Masters:** removals are soft (history keeps names). A driver, vehicle or customer on an open job can't be
+removed; a vehicle type in use can only be made inactive. Driver/vehicle/customer name changes refresh the
+job search index.
+
+**Custom statuses:** added between two existing steps; the direct route stays open and cancel is allowed.
+
+## 11. Phase status
 
 | Phase | Status |
 |---|---|
-| 1 Foundation — auth, users, roles, permissions, departments, full DB | **Done** |
-| 3/5 core — request creation, job list/search/filters, job detail, cost & selling entry, VAT/profit, audit, notifications, dashboard KPIs | **Done (early, because confidentiality had to be proven first)** |
-| 2 Masters — drivers, vehicles, customers, locations, settings screens | Next |
-| 3 Assignment — driver/vehicle assignment with availability & double-booking, status updates | Next |
-| 4 POD, documents, notes | Tables ready |
-| 6 Reports & export · 7 Email/WhatsApp · 8 Charts, saved views, column prefs | Tables ready |
+| 1 Foundation — auth, users, roles, permissions, full DB | Done |
+| 2 Masters — drivers, vehicles, customers, locations, vehicle types, settings, statuses | Done |
+| 3 Workflow — availability, assignment with conflict checks, status updates, edit/cancel, notifications | Done |
+| 5 core — cost & selling entry, VAT/profit, dashboard KPIs | Done early |
+| 4 POD upload/verify, documents, notes | Next |
+| 5 Financial dashboard & charts · 6 Reports & export · 7 Email/WhatsApp · 8 Saved views, column prefs | Planned |

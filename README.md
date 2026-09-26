@@ -5,8 +5,8 @@ Design, schema, permission matrix, workflow and financial logic: see `docs/ARCHI
 
 ## Set up (no command line needed)
 
-1. **Database** — create a new Supabase project. Open *SQL Editor*, paste the whole of
-   `db/migrations/001_schema.sql`, run it. Then do the same with `002_seed.sql`.
+1. **Database** — create a new Supabase project. Open *SQL Editor* and run each file in
+   `db/migrations/` once, in number order: `001_schema.sql`, `002_seed.sql`, `003_masters_assignment.sql`.
 2. **Code** — create a private GitHub repo and upload this folder through the GitHub website
    (don't upload `node_modules` or `.next`).
 3. **Hosting** — in Netlify, *Add new site → Import from GitHub*, pick the repo. Before deploying,

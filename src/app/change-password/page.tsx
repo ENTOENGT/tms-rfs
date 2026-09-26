@@ -13,8 +13,12 @@ export default function ChangePassword() {
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
   return (
     <div className="login">
-      <div className="art"><h1>Set your own password</h1><p>You signed in with a temporary password. Choose a new one to continue.</p></div>
+      <div className="art">
+        <img className="mark" src="/brand/mark-on-dark.png" alt="" width={120} height={110} />
+        <div><h1>Set your own password</h1><p>You signed in with a temporary password. Choose a new one to continue.</p></div>
+      </div>
       <form onSubmit={submit}>
+        <img className="logo" src="/brand/logo.png" alt="Reliance Freight Systems LLC" width={300} height={72} />
         <h1>New password</h1>
         {err && <div className="msg err">{err}</div>}
         <label className="f"><span>Current (temporary) password</span><input type="password" autoComplete="current-password" value={f.current_password} onChange={set('current_password')} required /></label>

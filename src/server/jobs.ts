@@ -10,6 +10,7 @@
 import { PoolClient } from 'pg';
 import { Actor } from './auth';
 import { ApiError, audit, bad, Db, forbidden, getSetting, notFound, one, q, tx } from './db';
+import { allowedTransitions } from './transitions';
 import { fromFils, summariseCommercial, summariseCost, summariseProfit, toFils } from '../lib/finance';
 
 // ---------------------------------------------------------------- read
@@ -50,7 +51,7 @@ const COMM_JOIN = `left join job_commercials jc on jc.job_id = t.id
   left join lateral (select coalesce(sum(amount),0) gross from job_revenue_lines where job_id = t.id) rev on true`;
 
 const pick = (row: any, keys: string[]) => Object.fromEntries(keys.map((k) => [k, row[k] ?? null]));
-const JOB_FIELDS = BASE_SELECT.split(',').map((f) => f.trim().split(/\s+/).pop()!.replace(/^t\./, '').replace(/^a\./, ''));
+const JOB_FIELDS = BASE_SELECT.split(',').map((f) => f.trim().split(/\s+/).pop()!.replace(/^\w+\./, ''));
 
 function financialBlock(row: any, actor: Actor) {
   const out: Record<string, unknown> = {};
@@ -190,11 +191,19 @@ export async function getJob(actor: Actor, id: string) {
       where d.job_id = $1 and d.deleted_at is null and ($2 or not dt.is_commercial) order by d.created_at`,
     [id, fin.sellingView && actor.has('documents.view_commercial')]))
     .map((d) => pick(d, ['id', 'document_type_code', 'document_type', 'file_name', 'mime_type', 'size_bytes', 'created_at']));
+  const stage = row.status_stage;
+  const editPerm = ['draft', 'open'].includes(stage) ? 'jobs.edit' : stage === 'active' ? 'jobs.edit_assigned' : stage === 'cancelled' ? null : 'jobs.edit_completed';
+  const locked = ['closed', 'cancelled'].includes(stage) && !actor.has('jobs.edit_completed');
   job.permissions = {
-    edit_cost: fin.buyingEdit, edit_selling: fin.sellingEdit,
-    assign: actor.has('jobs.assign_driver') || actor.has('jobs.assign_vehicle'),
+    edit_cost: fin.buyingEdit && !locked, edit_selling: fin.sellingEdit && !locked,
+    edit_request: !!editPerm && actor.has(editPerm as any),
+    assign: (actor.has('jobs.assign_driver') || actor.has('jobs.assign_vehicle')) &&
+      (['requested', 'pending_assignment', 'assigned', 'confirmed'].includes(row.status_code) || (stage === 'active' && actor.has('jobs.override_conflicts'))),
+    override_conflicts: actor.has('jobs.override_conflicts'),
     update_status: actor.has('jobs.update_status'), upload_pod: actor.has('pod.upload'),
+    pod_requirement: actor.has('pod.verify') && !['closed', 'cancelled'].includes(stage),
   };
+  job.next_statuses = locked ? [] : await allowedTransitions(actor, row);
   return job;
 }
 

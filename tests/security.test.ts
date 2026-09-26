@@ -5,8 +5,8 @@
  */
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'fs';
-import { pool, q, one } from '../src/server/db';
+import { resetDb } from './helpers';
+import { q, one } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, updateUser, lookups, listNotifications } from '../src/server/admin';
 import { createJob, getJob, listJobs, updateFinancials, dashboard } from '../src/server/jobs';
@@ -27,9 +27,7 @@ function assertNoCommercial(data: unknown, where: string) {
 }
 
 before(async () => {
-  await pool().query('drop schema public cascade; create schema public;');
-  await pool().query(readFileSync('db/migrations/001_schema.sql', 'utf8'));
-  await pool().query(readFileSync('db/migrations/002_seed.sql', 'utf8'));
+  await resetDb();
   const a = await one("select id from users where email = 'admin@company.local'");
   admin = (await loadActor(a.id))!;
   const role = async (c: string) => (await one('select id from roles where code = $1', [c])).id;

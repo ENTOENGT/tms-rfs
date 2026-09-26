@@ -18,10 +18,14 @@ export default function Login() {
   return (
     <div className="login">
       <div className="art">
-        <h1>Operations requests it. Transport moves it. Everyone sees where it is.</h1>
-        <p>Sign in with the account your administrator created for you.</p>
+        <img className="mark" src="/brand/mark-on-dark.png" alt="" width={120} height={110} />
+        <div>
+          <h1>Operations requests it. Transport moves it. Everyone sees where it is.</h1>
+          <p>Sign in with the account your administrator created for you.</p>
+        </div>
       </div>
       <form onSubmit={submit}>
+        <img className="logo" src="/brand/logo.png" alt="Reliance Freight Systems LLC" width={300} height={72} />
         <h1>Sign in</h1>
         {err && <div className="msg err">{err}</div>}
         <label className="f"><span>Email</span><input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></label>

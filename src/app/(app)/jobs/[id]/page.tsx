@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Fragment, useEffect, useState } from 'react';
 import { api, fmtDate, fmtDateTime, fmtMoney, slot } from '@/components/api';
 import { useMe } from '@/components/Shell';
+import JobActions from '@/components/JobActions';
 
 const LANE = ['pending_assignment', 'assigned', 'dispatched', 'picked_up', 'in_transit', 'delivered', 'pod_received', 'completed'];
 
@@ -128,6 +129,8 @@ export default function JobDetail({ params }: { params: { id: string } }) {
         <span className="muted small">Requested by {job.requested_by_name} · {fmtDateTime(job.created_at)}</span>
       </div>
       <Lane job={job} statuses={lk.job_statuses} />
+      {job.status_code === 'cancelled' && <div className="msg err">Cancelled{job.cancel_reason ? `: ${job.cancel_reason}` : ''}</div>}
+      <JobActions job={job} onChange={(j) => setJob(j)} />
       <div className="cols">
         <div>
           <div className="tabs" role="tablist">
@@ -156,7 +159,7 @@ export default function JobDetail({ params }: { params: { id: string } }) {
                 ['Planned pickup', fmtDateTime(job.planned_pickup_at)], ['ETA', fmtDateTime(job.planned_delivery_at)],
                 ['Actual pickup', fmtDateTime(job.actual_pickup_at)], ['Actual delivery', fmtDateTime(job.actual_delivery_at)],
                 ['Assigned by', job.assigned_by_name]]} />
-                : <p className="muted" style={{ margin: 0 }}>Waiting for Transport to assign a driver and vehicle. Assignment with availability and double-booking checks arrives in Phase 3.</p>}
+                : <p className="muted" style={{ margin: 0 }}>Waiting for Transport to assign a driver and vehicle.</p>}
             </div>
           </>}
           {tab === 'activity' && <div className="panel"><ul className="timeline">

@@ -57,6 +57,16 @@ export default function JobList({ mode }: { mode: 'requests' | 'jobs' }) {
               <option value="">All types</option>
               {lk.vehicle_types.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select></label>
+          <label className="f"><span>Driver</span>
+            <select value={f.driver_id ?? ''} onChange={set('driver_id')}>
+              <option value="">All drivers</option>
+              {lk.drivers.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select></label>
+          <label className="f"><span>Vehicle</span>
+            <select value={f.vehicle_id ?? ''} onChange={set('vehicle_id')}>
+              <option value="">All vehicles</option>
+              {lk.vehicles.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select></label>
           <label className="f"><span>Required from</span><input type="date" value={f.date_from ?? ''} onChange={set('date_from')} /></label>
           <label className="f"><span>Required to</span><input type="date" value={f.date_to ?? ''} onChange={set('date_to')} /></label>
           <label className="f"><span>BOE number</span><input value={f.boe ?? ''} onChange={set('boe')} /></label>
