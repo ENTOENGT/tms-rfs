@@ -2,7 +2,7 @@
 export default {
   reactStrictMode: true,
   poweredByHeader: false,
-  experimental: { serverComponentsExternalPackages: ['pg', 'bcryptjs'] },
+  experimental: { serverComponentsExternalPackages: ['pg', 'bcryptjs', 'exceljs'] },
   async headers() {
     return [{ source: '/(.*)', headers: [
       { key: 'X-Frame-Options', value: 'DENY' },

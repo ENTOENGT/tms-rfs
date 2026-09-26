@@ -219,7 +219,22 @@ Access: revenue/VAT columns only with `finance.selling.view`; cost only with `fi
 profit only with both + `finance.profit.view`. Transport gets a cost-only page, ranked by cost (so
 ordering can't hint at revenue). Charts are dependency-free SVG with text alternatives.
 
-## 13. Phase status
+## 13. Phase 6 — Reports
+
+`/reports`: Operational, Financial, Driver, Vehicle, Customer and POD-pending reports. Each has period
+(except POD pending, which shows everything outstanding), search, filters, sortable columns, paging and
+a totals row covering all matching rows (not just the page).
+
+One server function (`src/server/reports.ts`) produces the screen, print, CSV and Excel output, so the
+confidentiality rules are identical everywhere: revenue/VAT/profit columns are removed server-side for
+users who can't see them, sorting is only allowed on visible columns, and Transport sees cost-only
+versions of the financial and group reports. Exports need `reports.export` and are written to the audit
+log (who, which report, period, row count). Excel files have a title block, real numeric cells with
+number formats, frozen header and filters; CSV is UTF-8 with BOM for Excel and neutralises text that
+would run as a formula. Print / PDF uses a print layout (A4 landscape, Reliance header) and the browser's
+"Save as PDF". Export limit: 50,000 rows.
+
+## 14. Phase status
 
 | Phase | Status |
 |---|---|
@@ -228,4 +243,5 @@ ordering can't hint at revenue). Charts are dependency-free SVG with text altern
 | 3 Workflow — availability, assignment with conflict checks, status updates, edit/cancel, notifications | Done |
 | 4 POD upload/verify/reject, job documents, Documents page, notes, POD reminders | Done |
 | 5 Financial dashboard — KPIs, monthly chart, rankings, breakdown tables, CSV | Done |
-| 6 Reports & export (Excel/CSV/PDF) · 7 Email/WhatsApp · 8 Saved views, column prefs, live ops table | Planned |
+| 6 Reports — 6 reports, Excel/CSV export, print/PDF, export audit | Done |
+| 7 Email notifications (WhatsApp-ready) · 8 Saved views, column prefs, live ops table, performance | Planned |
