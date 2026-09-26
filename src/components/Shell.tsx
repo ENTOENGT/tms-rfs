@@ -21,7 +21,7 @@ const NAV: { href: string; label: string; perm?: string | string[]; phase?: numb
   { href: '/customers', label: 'Customers', perm: 'jobs.view' },
   { href: '/locations', label: 'Locations', perm: 'jobs.view' },
   { href: '/financials', label: 'Financials', perm: ['finance.buying.view', 'finance.selling.view'] },
-  { href: '/reports', label: 'Reports', phase: 6 },
+  { href: '/reports', label: 'Reports', perm: 'reports.view' },
   { href: '/documents', label: 'Documents', perm: 'jobs.view' },
 ];
 const ADMIN: { href: string; label: string; perm: string; phase?: number }[] = [

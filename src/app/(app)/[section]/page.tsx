@@ -3,7 +3,6 @@ import MasterPage from '@/components/MasterPage';
 
 const MASTER_PAGES = ['drivers', 'vehicles', 'customers', 'locations'];
 const PLAN: Record<string, [string, number, string]> = {
-  reports: ['Reports', 6, 'Operational, financial, driver, vehicle, customer and POD-pending reports with Excel/CSV/PDF export.'],
 };
 export default function Section({ params }: { params: { section: string } }) {
   if (MASTER_PAGES.includes(params.section)) return <MasterPage entity={params.section} />;

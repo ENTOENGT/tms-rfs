@@ -157,3 +157,22 @@ a.kpi:hover { background: #faf8f4; text-decoration: none; }
 .perm-matrix td:not(:first-child), .perm-matrix th:not(:first-child) { text-align: center; }
 .perm-matrix input { width: auto; }
 .sens { font-size: 11px; color: var(--attention); margin-left: 6px; }
+
+/* ---------- print (reports → Print / PDF) ---------- */
+.print-only { display: none; }
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+  html, body { background: #fff; }
+  .side, .top, .no-print { display: none !important; }
+  .shell { display: block; }
+  .page { padding: 0; }
+  .print-only { display: block; }
+  .print-head { display: flex !important; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid var(--brand-gold); padding-bottom: 8px; margin-bottom: 10px; font-size: 12px; text-align: right; }
+  .panel { border: 0; box-shadow: none; }
+  .table-wrap { overflow: visible; }
+  table.t { font-size: 10px; }
+  table.t th, table.t td { padding: 4px 6px; }
+  table.t thead { display: table-header-group; }
+  table.t tr { break-inside: avoid; }
+  table.t th button { all: unset; }
+}
