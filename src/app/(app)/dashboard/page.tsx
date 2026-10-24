@@ -7,6 +7,9 @@ import { period, PERIODS } from '@/lib/period';
 
 export default function Dashboard() {
   const { me, lk } = useMe();
+  const [rc, setRc] = useState<any>(null);
+  const seesAllRuns = me.permissions.includes('runs.view_all') || me.permissions.includes('runs.view_department');
+  useEffect(() => { if (me.permissions.some((p) => p.startsWith('runs.'))) api('/api/runs/summary').then(setRc).catch(() => {}); }, []);
   const [key, setKey] = useState('this_month');
   const [custom, setCustom] = useState<[string, string]>(['', '']);
   const [k, setK] = useState<any>(null);
@@ -33,7 +36,18 @@ export default function Dashboard() {
           <input type="date" style={{ width: 150 }} value={custom[1]} onChange={(e) => setCustom([custom[0], e.target.value])} aria-label="To" />
         </>}
       </div>
-      {!me.permissions.includes('jobs.view') && <div className="panel"><p style={{ margin: 0 }}>Welcome. Use <b>Users</b> and <b>Roles</b> in the menu to set up your team. Your department's own tasks will appear here in the next update.</p></div>}
+      {rc && rc.pending !== undefined && <>
+        <h2 style={{ margin: '4px 0 8px' }}>Messenger runs</h2>
+        <div className="kpis" style={{ marginBottom: 16 }}>
+          {seesAllRuns && <Link className={`kpi${rc.pending ? ' attn' : ''}`} href="/runs?status=pending"><b>{rc.pending}</b><span>Waiting for a messenger</span></Link>}
+          <Link className="kpi" href="/runs"><b>{rc.assigned}</b><span>{seesAllRuns ? 'Assigned' : 'Assigned to me'}</span></Link>
+          <Link className="kpi" href="/runs"><b>{rc.collected}</b><span>Collected, on the way</span></Link>
+          <Link className={`kpi${rc.failed ? ' attn' : ''}`} href="/runs"><b>{rc.failed}</b><span>Could not complete</span></Link>
+          <div className="kpi"><b>{rc.delivered_today}</b><span>Delivered today</span></div>
+        </div>
+        {!me.permissions.includes('jobs.view') && <Link className="btn primary" href="/runs" style={{ padding: '12px 18px' }}>{seesAllRuns ? 'Open messenger runs' : 'Open my runs'}</Link>}
+      </>}
+      {!me.permissions.includes('jobs.view') && !rc?.pending && rc?.pending !== 0 && <div className="panel"><p style={{ margin: 0 }}>Welcome. Use <b>Users</b> and <b>Roles</b> in the menu to set up your team.</p></div>}
       {me.permissions.includes('jobs.view') && <>
       <div className="kpis">
         <Kpi n={k?.today_jobs} label="Today's jobs" href="/jobs" />
