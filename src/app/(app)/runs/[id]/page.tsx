@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api, fmtDate, fmtDateTime } from '@/components/api';
-import { shrinkImage, fmtSize } from '@/components/JobFiles';
+import { FileLink, runFileUrl, shrinkImage, fmtSize } from '@/components/JobFiles';
 import { RUN_COLOR } from '@/components/RunForm';
 
 const LANE: [string, string][] = [['pending', 'Requested'], ['assigned', 'Assigned'], ['collected', 'Collected'], ['delivered', 'Delivered']];
@@ -130,7 +130,7 @@ export default function RunDetail({ params }: { params: { id: string } }) {
           <div className="panel"><h2>Proof & files</h2>
             {run.files.length === 0 && <p className="muted small" style={{ marginTop: 0 }}>No photos yet.</p>}
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 13 }}>
-              {run.files.map((f: any) => <li key={f.id} style={{ padding: '4px 0' }}><a href={`/api/run-files/${f.id}`} target="_blank" rel="noopener">{f.file_name}</a>
+              {run.files.map((f: any, i: number) => <li key={f.id} style={{ padding: '4px 0' }}><FileLink files={run.files} index={i} base={runFileUrl} />
                 <span className="muted small"> {fmtSize(f.size_bytes)} · {f.uploaded_by_name}</span></li>)}
             </ul>
             {can.upload && <label className="btn small" style={{ marginTop: 10, display: 'inline-block' }}>Add photo

@@ -9,7 +9,7 @@ const check = (req: Request, action: 'put' | 'get') => {
   const u = new URL(req.url);
   const key = u.searchParams.get('key') ?? '';
   const ok = enabled() && verifyLocalSig(key, action, Number(u.searchParams.get('exp')), u.searchParams.get('sig') ?? '');
-  return { ok, key, name: u.searchParams.get('name') ?? 'file' };
+  return { ok, key, name: u.searchParams.get('name') ?? 'file', inline: u.searchParams.get('inline') === '1' };
 };
 export async function PUT(req: Request) {
   const { ok, key } = check(req, 'put');
@@ -20,10 +20,10 @@ export async function PUT(req: Request) {
   return NextResponse.json({ Key: key });
 }
 export async function GET(req: Request) {
-  const { ok, key, name } = check(req, 'get');
+  const { ok, key, name, inline } = check(req, 'get');
   if (!ok) return new NextResponse('Forbidden', { status: 403 });
   try {
     const [buf, type] = await Promise.all([readFile(localPath(key)), readFile(localPath(key) + '.type', 'utf8')]);
-    return new NextResponse(buf, { headers: { 'content-type': type, 'content-disposition': `attachment; filename="${name.replace(/"/g, '')}"` } });
+    return new NextResponse(buf, { headers: { 'content-type': type, 'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${name.replace(/"/g, '')}"` } });
   } catch { return new NextResponse('Not found', { status: 404 }); }
 }

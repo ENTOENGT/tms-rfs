@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api, fmtDateTime } from '@/components/api';
-import { fmtSize } from '@/components/JobFiles';
+import { FileLink, docUrl, fmtSize } from '@/components/JobFiles';
 import { useMe } from '@/components/Shell';
 
 export default function Documents() {
@@ -32,8 +32,8 @@ export default function Documents() {
       <div className="panel flush"><div className="table-wrap"><table className="t">
         <thead><tr><th>File</th><th>Type</th><th>Job</th><th>Customer</th><th>BOE</th><th>Size</th><th>Uploaded</th></tr></thead>
         <tbody>
-          {data?.rows.map((d: any) => <tr key={d.id}>
-            <td><a href={`/api/documents/${d.id}/download`} target="_blank" rel="noopener">{d.file_name}</a></td>
+          {data?.rows.map((d: any, i: number) => <tr key={d.id}>
+            <td><FileLink files={data.rows} index={i} base={docUrl} /></td>
             <td>{d.document_type}</td><td><Link href={`/jobs/${d.job_id}`}><b>{d.job_number}</b></Link></td>
             <td>{d.customer_name}</td><td>{d.boe_number ?? '—'}</td><td>{fmtSize(d.size_bytes)}</td>
             <td>{d.uploaded_by_name ?? '—'} <span className="muted small">· {fmtDateTime(d.created_at)}</span></td>
