@@ -261,7 +261,26 @@ A manager's edits never remove exceptions set by the Super Admin.
 customer documents can never reach anyone in a Transport or Messenger department, whatever their role
 or exceptions say — even if the Super Admin ticks it.
 
-## 15. Phase status
+## 15. Messenger runs (migration 006)
+
+Document runs (collect / deliver / submit papers — shipping lines, customs, customers), kept separate from
+truck jobs in `messenger_runs` (+ `messenger_run_files`, `messenger_run_notes`). Numbers MR-1001 onward.
+
+Flow: Operations requests (department set automatically) → Messenger Manager is notified and assigns a
+messenger (list shows how many open runs each already has that day) → messenger marks **Collected** →
+**Delivered** with "received by" and a photo of the receipt (stored in the same private file storage as
+PODs, under `runs/`). "Could not complete" needs a reason, notifies the requester and managers, and the
+manager reassigns. Cancel needs a reason. Requests can be edited only until assigned.
+
+Visibility (`runScope` in `src/server/runs.ts`): `runs.view_all` → every run (Messenger Manager, Super
+Admin); `runs.view_department` → own department (Operations); otherwise only runs they requested or are
+assigned to (messengers). Transport has no access. Proof files use the same rule.
+
+Permissions: runs.view_all, runs.view_department, runs.create, runs.cancel, runs.assign, runs.update_status.
+Defaults — Messenger Manager: view_all, assign, update_status, cancel · Messenger: update_status ·
+Operations Manager and Sub-user: view_department, create, cancel.
+
+## 16. Phase status
 
 | Phase | Status |
 |---|---|
@@ -272,6 +291,6 @@ or exceptions say — even if the Super Admin ticks it.
 | 5 Financial dashboard — KPIs, monthly chart, rankings, breakdown tables, CSV | Done |
 | 6 Reports — 7 reports incl. department, Excel/CSV export, print/PDF, export audit | Done |
 | Structure stage 1 — departments, managers, department-only visibility | Done |
-| Structure stage 2 — messengers: document runs | Next |
-| Structure stage 3 — phone app (from a link) for drivers and messengers | Planned |
+| Structure stage 2 — messenger runs (request, assign, collected, delivered with photo) | Done |
+| Structure stage 3 — phone app (from a link) for drivers and messengers | Next |
 | 7 Email notifications · 8 Saved views, column prefs, live ops table, performance | Planned |
