@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { requireActor, signSession, SESSION_COOKIE, cookieOptions } from '@/server/auth';
+import { requireActor, issueSession, SESSION_COOKIE } from '@/server/auth';
 import { changeOwnPassword } from '@/server/admin';
 import { route, body } from '@/server/http';
 export const POST = route(async (req) => {
   const a = await requireActor(req, { allowPasswordChange: true });
-  const v = await changeOwnPassword(a, await body(req));
+  await changeOwnPassword(a, await body(req));
+  const s = await issueSession(a.id);                 // other sessions are signed out (token version moved on)
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(SESSION_COOKIE, await signSession(a.id, v), cookieOptions); // other sessions are signed out
+  res.cookies.set(SESSION_COOKIE, s.token, s.options);
   return res;
 });

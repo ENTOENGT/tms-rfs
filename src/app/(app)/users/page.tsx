@@ -1,11 +1,12 @@
 'use client';
+import SendAppLink from '@/components/SendAppLink';
 import { useEffect, useMemo, useState } from 'react';
 import { api, fmtDateTime } from '@/components/api';
 import { useMe } from '@/components/Shell';
 
 const SIDE: Record<string, string> = { admin: 'Administration', operations: 'Operations', transport: 'Transport', messenger: 'Messengers', finance: 'Finance' };
 
-function UserForm({ user, data, onDone, onClose }: { user?: any; data: any; onDone: (msg: string) => void; onClose: () => void }) {
+function UserForm({ user, data, onDone, onClose }: { user?: any; data: any; onDone: (msg: string, sendApp?: any) => void; onClose: () => void }) {
   const all = data.scope === 'all';
   const [f, setF] = useState<any>(user ? { ...user } : {
     full_name: '', email: '', mobile: '', role_id: '', department_id: all ? '' : data.department.id, overrides: [] });
@@ -14,7 +15,10 @@ function UserForm({ user, data, onDone, onClose }: { user?: any; data: any; onDo
   const dept = data.departments.find((d: any) => d.id === f.department_id);
   // Only roles that fit the chosen department (same side, and either shared or this department's own)
   const roles = data.roles.filter((r: any) => dept && (r.code === 'super_admin' ? dept.side === 'admin'
-    : (!r.side || r.side === dept.side) && (!r.department_id || r.department_id === dept.id)));
+    : (!r.side || r.side === dept.side) && (!r.department_id || r.department_id === dept.id))
+    // drivers are added on the Drivers page (so jobs can be assigned to them), then sent the app from there
+    && (r.code !== 'driver' || user?.role_code === 'driver'));
+  const appRole = !!data.roles.find((r: any) => r.id === f.role_id)?.app_only;
   const ov = (code: string) => f.overrides.find((o: any) => o.code === code);
   const setOv = (code: string, v: string) => setF({ ...f, overrides: [...f.overrides.filter((o: any) => o.code !== code),
     ...(v === '' ? [] : [{ code, granted: v === 'grant' }])] });
@@ -38,7 +42,8 @@ function UserForm({ user, data, onDone, onClose }: { user?: any; data: any; onDo
         onDone(`Changes saved for ${f.full_name}. They will be asked to sign in again if their access changed.`);
       } else {
         const r = await api('/api/users', { body: f });
-        onDone(`${f.full_name} added. Temporary password: ${r.temporary_password} — give it to them privately. They choose their own password at first sign-in.`);
+        if (appRole) onDone(`${f.full_name} added.`, { id: r.id, full_name: f.full_name });     // goes straight to "Send app link"
+        else onDone(`${f.full_name} added. Temporary password: ${r.temporary_password} — give it to them privately. They choose their own password at first sign-in.`);
       }
     } catch (e: any) { setErr(e.message); }
   };
@@ -49,8 +54,8 @@ function UserForm({ user, data, onDone, onClose }: { user?: any; data: any; onDo
         {err && <div className="msg err">{err}</div>}
         <div className="grid g2">
           <label className="f"><span>Full name <em>*</em></span><input value={f.full_name} onChange={set('full_name')} /></label>
-          <label className="f"><span>Email <em>*</em></span><input type="email" value={f.email} onChange={set('email')} disabled={!!user} /></label>
-          <label className="f"><span>Mobile</span><input value={f.mobile ?? ''} onChange={set('mobile')} /></label>
+          <label className="f"><span>Email {appRole ? <small className="muted">(optional)</small> : <em>*</em>}</span><input type="email" value={f.email} onChange={set('email')} disabled={!!user} /></label>
+          <label className="f"><span>Mobile {appRole && <em>*</em>}</span><input value={f.mobile ?? ''} onChange={set('mobile')} placeholder={appRole ? 'They sign in to the phone app with this' : ''} /></label>
           {all ? <label className="f"><span>Department <em>*</em></span><select value={f.department_id ?? ''} onChange={set('department_id')}>
               <option value="">Choose department</option>
               {Object.keys(SIDE).map((side) => {
@@ -91,6 +96,7 @@ export default function Users() {
   const [edit, setEdit] = useState<any>(null);
   const [q, setQ] = useState('');
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; m: string } | null>(null);
+  const [appFor, setAppFor] = useState<any>(null);
   const load = () => api('/api/users').then(setData).catch((e) => setMsg({ t: 'err', m: e.message }));
   useEffect(() => { load(); }, []);
   const rows = useMemo(() => (data?.users ?? []).filter((u: any) => !q || `${u.full_name} ${u.email} ${u.department_name} ${u.role_name}`.toLowerCase().includes(q.toLowerCase())), [data, q]);
@@ -108,24 +114,28 @@ export default function Users() {
       {data.scope === 'department' && <p className="muted small" style={{ marginTop: -6 }}>You manage the users of {data.department.name}. Managers are added and changed by the Super Admin.</p>}
       {msg && <div className={`msg ${msg.t}`}>{msg.m}</div>}
       <div className="panel flush"><div className="table-wrap"><table className="t">
-        <thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Role</th><th>Exceptions</th><th>Last sign-in</th><th>Status</th><th /></tr></thead>
+        <thead><tr><th>Name</th><th>Email / mobile</th><th>Department</th><th>Role</th><th>Exceptions</th><th>Last sign-in</th><th>Status</th><th /></tr></thead>
         <tbody>{rows.map((u: any) => (
           <tr key={u.id}>
-            <td><b>{u.full_name}</b></td><td>{u.email}</td>
+            <td><b>{u.full_name}</b>{u.app_only && <div className="muted small">Phone app</div>}</td>
+            <td>{u.app_only && u.mobile ? u.mobile : u.email}</td>
             <td>{u.department_name ?? <span className="flag">No department</span>}</td>
             <td>{u.role_name}{u.is_manager && <span className="badge outline" style={{ marginLeft: 6 }}>Manager</span>}</td>
             <td>{u.overrides.length ? <span className="flag">{u.overrides.length}</span> : '—'}</td>
             <td>{fmtDateTime(u.last_login_at)}</td>
-            <td>{u.is_active ? (u.must_change_password ? <span className="badge outline">Awaiting first sign-in</span> : 'Active') : <span className="badge" style={{ background: '#9B2C2C' }}>Disabled</span>}</td>
+            <td>{u.is_active ? (u.must_change_password ? <span className="badge outline">{u.app_only ? 'App not set up yet' : 'Awaiting first sign-in'}</span> : 'Active') : <span className="badge" style={{ background: '#9B2C2C' }}>Disabled</span>}</td>
             <td style={{ whiteSpace: 'nowrap' }}>{u.can_edit && <>
               <button className="btn small" onClick={() => setEdit(u)}>Edit</button>{' '}
-              <button className="btn small" onClick={() => confirm(`Reset password for ${u.full_name}?`) && act(() => api(`/api/users/${u.id}/reset-password`, { body: {} }), (r) => `Temporary password for ${u.full_name}: ${r.temporary_password}`)}>Reset password</button>{' '}
+              {u.app_only
+                ? u.is_active && <><button className="btn small" onClick={() => setAppFor(u)}>Send app link</button>{' '}</>
+                : <><button className="btn small" onClick={() => confirm(`Reset password for ${u.full_name}?`) && act(() => api(`/api/users/${u.id}/reset-password`, { body: {} }), (r) => `Temporary password for ${u.full_name}: ${r.temporary_password}`)}>Reset password</button>{' '}</>}
               {u.id !== me.id && <button className="btn small danger" onClick={() => act(() => api(`/api/users/${u.id}`, { method: 'PATCH', body: { is_active: !u.is_active } }), () => `${u.full_name} ${u.is_active ? 'disabled' : 'enabled'}`)}>{u.is_active ? 'Disable' : 'Enable'}</button>}
             </>}</td>
           </tr>))}
           {rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 24, textAlign: 'center' }}>{q ? 'Nobody matches that search.' : 'No users yet.'}</td></tr>}
         </tbody></table></div></div>
-      {edit && <UserForm user={edit.id ? edit : undefined} data={data} onClose={() => setEdit(null)} onDone={(m) => { setEdit(null); setMsg({ t: 'ok', m }); load(); }} />}
+      {appFor && <SendAppLink userId={appFor.id} name={appFor.full_name} onClose={() => { setAppFor(null); load(); }} />}
+      {edit && <UserForm user={edit.id ? edit : undefined} data={data} onClose={() => setEdit(null)} onDone={(m, app) => { setEdit(null); setMsg({ t: 'ok', m }); load(); if (app) setAppFor(app); }} />}
     </div>
   );
 }

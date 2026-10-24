@@ -28,10 +28,10 @@ export default function Login() {
         <img className="logo" src="/brand/logo.png" alt="Reliance Freight Systems LLC" width={300} height={72} />
         <h1>Sign in</h1>
         {err && <div className="msg err">{err}</div>}
-        <label className="f"><span>Email</span><input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></label>
+        <label className="f"><span>Email or mobile number</span><input type="text" inputMode="email" autoCapitalize="none" autoCorrect="off" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></label>
         <label className="f"><span>Password</span><input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
         <button className="btn primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-        <p className="muted small">Forgot your password? Ask an administrator to reset it.</p>
+        <p className="muted small">Forgot your password? Ask your manager to reset it, or to send you a new app link.</p>
       </form>
     </div>
   );
