@@ -2,7 +2,7 @@
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { resetDb } from './helpers';
+import { resetDb, mkUser, deptId } from './helpers';
 import { one, q } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, updateUser } from '../src/server/admin';
@@ -20,9 +20,8 @@ before(async () => {
   await resetDb();
   admin = (await loadActor((await one("select id from users where email='admin@company.local'")).id))!;
   const role = async (c: string) => (await one('select id from roles where code=$1', [c])).id;
-  const mk = async (n: string, r: string) => { const u = await createUser(admin, { full_name: n, email: `${n}@x.ae`, role_id: await role(r) });
-    await q('update users set must_change_password=false where id=$1', [u.id]); return (await loadActor(u.id))!; };
-  ops = await mk('ops', 'operations'); tr = await mk('tr', 'transport');
+  const mk = (n: string, r: string) => mkUser(admin, n, r);
+  ops = await mk('ops', 'operations_manager'); tr = await mk('tr', 'transport');
   const abc = (await createMaster(ops, 'customers', { name: 'ABC Trading' })).id;
   const evil = (await createMaster(ops, 'customers', { name: '=HYPERLINK("http://x","click")' })).id;
   const drv = (await createMaster(tr, 'drivers', { full_name: 'Ahmed' })).id;
@@ -40,8 +39,8 @@ before(async () => {
 });
 
 test('Report list follows permissions', async () => {
-  assert.deepEqual(reportList(ops).map((r) => r.key), ['operational', 'financial', 'driver', 'vehicle', 'customer', 'pod_pending']);
-  assert.equal(reportList(tr).length, 6, 'Transport keeps cost-only versions');
+  assert.deepEqual(reportList(ops).map((r) => r.key), ['operational', 'financial', 'department', 'driver', 'vehicle', 'customer', 'pod_pending']);
+  assert.equal(reportList(tr).length, 7, 'Transport keeps cost-only versions');
   await updateUser(admin, tr.id, { overrides: [{ code: 'finance.buying.view', granted: false }] });
   const noFin = (await loadActor(tr.id))!;
   assert.deepEqual(reportList(noFin).map((r) => r.key), ['operational', 'pod_pending']);
@@ -51,7 +50,7 @@ test('Report list follows permissions', async () => {
 
 test('Financial report: correct figures and totals for Operations', async () => {
   const r = await runReport(ops, 'financial', P);
-  assert.deepEqual(r.columns.map((c) => c.key), ['job_number', 'required_date', 'customer_name', 'status_name', 'net_revenue', 'vat', 'total_cost', 'gross_profit', 'margin_pct']);
+  assert.deepEqual(r.columns.map((c) => c.key), ['job_number', 'required_date', 'department_name', 'customer_name', 'status_name', 'net_revenue', 'vat', 'total_cost', 'gross_profit', 'margin_pct']);
   assert.equal(r.total, 3);
   assert.deepEqual([r.totals!.net_revenue, r.totals!.total_cost, r.totals!.gross_profit, r.totals!.margin_pct], ['5721.99', '985.00', '4736.99', '82.79']);
   const spec = r.rows.find((x) => x.net_revenue === '400.00')!;
@@ -60,7 +59,7 @@ test('Financial report: correct figures and totals for Operations', async () => 
 
 test('Transport financial report is cost-only, and cannot be ranked by hidden revenue', async () => {
   const r = await runReport(tr, 'financial', { ...P, sort: 'net_revenue', dir: 'desc' });
-  assert.deepEqual(r.columns.map((c) => c.key), ['job_number', 'required_date', 'customer_name', 'status_name', 'total_cost']);
+  assert.deepEqual(r.columns.map((c) => c.key), ['job_number', 'required_date', 'department_name', 'customer_name', 'status_name', 'total_cost']);
   const json = JSON.stringify(r);
   for (const leak of ['4321', 'net_revenue', 'gross_profit', 'vat', 'margin', '5721']) assert.ok(!json.includes(leak), `leaked ${leak}`);
   const def = await runReport(tr, 'financial', P);
@@ -98,9 +97,9 @@ test('Excel export: real numbers, title block, and Transport file has no revenue
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(x.body as any);
   const ws = wb.worksheets[0];
   assert.equal(ws.getCell('A2').value, 'Financial report');
-  assert.equal(ws.getRow(5).getCell(5).value, 'Revenue (ex VAT) (AED)');
+  assert.equal(ws.getRow(5).getCell(6).value, 'Revenue (ex VAT) (AED)');
   const totalRow = ws.getRow(ws.rowCount);
-  assert.equal(totalRow.getCell(8).value, 4736.99);
+  assert.equal(totalRow.getCell(9).value, 4736.99);
   const t = await exportReport(tr, 'financial', P, 'xlsx');
   const wb2 = new ExcelJS.Workbook(); await wb2.xlsx.load(t.body as any);
   const all: string[] = [];
@@ -111,7 +110,7 @@ test('Excel export: real numbers, title block, and Transport file has no revenue
 test('CSV export: Excel-safe text, formulas neutralised, negatives intact; exports are audited', async () => {
   const c = await exportReport(ops, 'financial', P, 'csv');
   const text = c.body.toString('utf8');
-  assert.ok(text.startsWith('\ufeffJob number,Date,Customer'));
+  assert.ok(text.startsWith('\ufeffJob number,Date,Department,Customer'));
   assert.ok(text.includes(`"'=HYPERLINK(""http://x"",""click"")"`), 'formula neutralised');
   const log = await one(`select action, new_value from audit_log where entity_type = 'report' order by id desc limit 1`);
   assert.match(log.action, /Report exported \(CSV\)/); assert.match(log.new_value, /Financial report/);

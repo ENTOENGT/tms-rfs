@@ -1,7 +1,7 @@
 /** Phase 2 (masters) and Phase 3 (assignment & workflow) against real Postgres. */
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb } from './helpers';
+import { resetDb, mkUser, deptId } from './helpers';
 import { one, q } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, updateUser, listNotifications } from '../src/server/admin';
@@ -31,12 +31,8 @@ before(async () => {
   const a = await one("select id from users where email = 'admin@company.local'");
   admin = (await loadActor(a.id))!;
   const role = async (c: string) => (await one('select id from roles where code = $1', [c])).id;
-  const mk = async (name: string, r: string) => {
-    const u = await createUser(admin, { full_name: name, email: `${name}@x.ae`, role_id: await role(r) });
-    await q('update users set must_change_password = false where id = $1', [u.id]);
-    return (await loadActor(u.id))!;
-  };
-  ops = await mk('ops', 'operations'); transport = await mk('tr', 'transport'); finance = await mk('fin', 'finance');
+  const mk = (name: string, r: string) => mkUser(admin, name, r);
+  ops = await mk('ops', 'operations_manager'); transport = await mk('tr', 'transport'); finance = await mk('fin', 'finance');
   customerId = (await createMaster(ops, 'customers', { name: 'ABC Trading' })).id;
   van = (await one("select id from vehicle_types where name = 'Van'")).id;
   ton3 = (await one("select id from vehicle_types where name = '3 Ton'")).id;

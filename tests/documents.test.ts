@@ -3,7 +3,7 @@ process.env.STORAGE_DRIVER = 'local';
 process.env.LOCAL_UPLOAD_DIR = '/tmp/tms-test-uploads';
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb } from './helpers';
+import { resetDb, mkUser, deptId } from './helpers';
 import { one, q } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, listNotifications, updateUser } from '../src/server/admin';
@@ -37,9 +37,8 @@ before(async () => {
   await resetDb();
   admin = (await loadActor((await one("select id from users where email='admin@company.local'")).id))!;
   const role = async (c: string) => (await one('select id from roles where code=$1', [c])).id;
-  const mk = async (n: string, r: string) => { const u = await createUser(admin, { full_name: n, email: `${n}@x.ae`, role_id: await role(r) });
-    await q('update users set must_change_password=false where id=$1', [u.id]); return (await loadActor(u.id))!; };
-  ops = await mk('ops', 'operations'); transport = await mk('tr', 'transport');
+  const mk = (n: string, r: string) => mkUser(admin, n, r);
+  ops = await mk('ops', 'operations_manager'); transport = await mk('tr', 'transport');
   await createMaster(ops, 'customers', { name: 'ABC' });
   const j = await deliveredJob(); jobId = j.id; jobNo = j.job_number;
 });
@@ -144,14 +143,12 @@ test('POD reminders: sent once per period to Transport, not repeated', async () 
   assert.equal(await runPodReminders(false), 0, 'throttled');
 });
 
-test('Scoped users only see documents of their own requests', async () => {
-  await updateUser(admin, ops.id, { overrides: [{ code: 'jobs.view_all', granted: false }] });
-  const limited = (await loadActor(ops.id))!;
-  const other = await createJob(admin, { customer_id: (await one('select id from customers limit 1')).id, required_date: D, pickup_name: 'X', delivery_name: 'Y' });
+test('Documents of another department stay hidden', async () => {
+  const limited = ops;
+  const other = await createJob(admin, { department_id: await deptId('sea_import'), customer_id: (await one('select id from customers limit 1')).id, required_date: D, pickup_name: 'X', delivery_name: 'Y' });
   const doc = (await upload(admin, other.id, 'boe', 'boe.pdf', 'application/pdf')).id;
   await rejects(downloadUrl(limited, doc), 'NOT_FOUND');
   assert.ok(!(await listDocuments(limited, {})).rows.some((r: any) => r.id === doc));
-  await updateUser(admin, ops.id, { overrides: [] });
 });
 
 test('Admin storage self-test passes on the configured driver', async () => {

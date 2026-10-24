@@ -1,7 +1,7 @@
 /** Phase 5 — financial dashboard numbers and confidentiality, against real Postgres. */
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb } from './helpers';
+import { resetDb, mkUser, deptId } from './helpers';
 import { one, q } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, updateUser } from '../src/server/admin';
@@ -20,9 +20,8 @@ before(async () => {
   await resetDb();
   admin = (await loadActor((await one("select id from users where email='admin@company.local'")).id))!;
   const role = async (c: string) => (await one('select id from roles where code=$1', [c])).id;
-  const mk = async (n: string, r: string) => { const u = await createUser(admin, { full_name: n, email: `${n}@x.ae`, role_id: await role(r) });
-    await q('update users set must_change_password=false where id=$1', [u.id]); return (await loadActor(u.id))!; };
-  ops = await mk('ops', 'operations'); tr = await mk('tr', 'transport'); fin = await mk('fin', 'finance');
+  const mk = (n: string, r: string) => mkUser(admin, n, r);
+  ops = await mk('ops', 'operations_manager'); tr = await mk('tr', 'transport'); fin = await mk('fin', 'finance');
   abc = (await createMaster(ops, 'customers', { name: 'ABC' })).id; gulf = (await createMaster(ops, 'customers', { name: 'Gulf' })).id;
   ahmed = (await createMaster(tr, 'drivers', { full_name: 'Ahmed' })).id;
   truck = (await createMaster(tr, 'vehicles', { vehicle_number: 'DXB 1', vehicle_type_id: (await one("select id from vehicle_types where name='3 Ton'")).id })).id;

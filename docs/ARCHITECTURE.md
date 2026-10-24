@@ -234,7 +234,34 @@ number formats, frozen header and filters; CSV is UTF-8 with BOM for Excel and n
 would run as a formula. Print / PDF uses a print layout (A4 landscape, Reliance header) and the browser's
 "Save as PDF". Export limit: 50,000 rows.
 
-## 14. Phase status
+## 14. Company structure — departments and managers (migration 005)
+
+Departments belong to a **side**: Administration, Operations, Transport, Messengers, Finance.
+Operations departments: E-Com, Sea-Import, Sea-Export, Air-Import, Air-Export, Documentations,
+Commercial (+ "Operations (general)" kept for jobs created before the change). The Super Admin can add,
+rename and switch off departments in Settings.
+
+Roles: Super Admin · Operations Manager · Transport Manager · Messenger Manager (department admins,
+created only by the Super Admin) · shared sub-user roles (Operations Sub-user, Transport Sub-user,
+Messenger, Finance User) · roles a manager creates for their own department.
+
+**Who sees which jobs** (`src/server/scope.ts`, used by every job query): `jobs.view_all` → every
+department (Super Admin, Transport, Finance); `jobs.view_department` → own department (+ own requests);
+otherwise own requests only. Notifications follow the same rule.
+
+**Managers** (`src/server/team.ts`) manage users and roles of their own department only: never
+managers, Super Admins or themselves; can't move people between departments; assign only non-manager
+roles of their side or their own department; can hand out only permissions they hold, never admin ones.
+A manager's edits never remove exceptions set by the Super Admin.
+
+**Selling price**: off for sub-users by default; each operations manager turns it on per person
+("Selling price, revenue and profit" choice on the user) or per department role.
+
+**Hard rule in the database** (`user_has_perm`, migration 005): selling price, revenue, profit and
+customer documents can never reach anyone in a Transport or Messenger department, whatever their role
+or exceptions say — even if the Super Admin ticks it.
+
+## 15. Phase status
 
 | Phase | Status |
 |---|---|
@@ -243,5 +270,8 @@ would run as a formula. Print / PDF uses a print layout (A4 landscape, Reliance 
 | 3 Workflow — availability, assignment with conflict checks, status updates, edit/cancel, notifications | Done |
 | 4 POD upload/verify/reject, job documents, Documents page, notes, POD reminders | Done |
 | 5 Financial dashboard — KPIs, monthly chart, rankings, breakdown tables, CSV | Done |
-| 6 Reports — 6 reports, Excel/CSV export, print/PDF, export audit | Done |
-| 7 Email notifications (WhatsApp-ready) · 8 Saved views, column prefs, live ops table, performance | Planned |
+| 6 Reports — 7 reports incl. department, Excel/CSV export, print/PDF, export audit | Done |
+| Structure stage 1 — departments, managers, department-only visibility | Done |
+| Structure stage 2 — messengers: document runs | Next |
+| Structure stage 3 — phone app (from a link) for drivers and messengers | Planned |
+| 7 Email notifications · 8 Saved views, column prefs, live ops table, performance | Planned |

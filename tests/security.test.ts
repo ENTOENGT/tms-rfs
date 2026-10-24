@@ -5,7 +5,7 @@
  */
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb } from './helpers';
+import { resetDb, mkUser, deptId } from './helpers';
 import { q, one } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, updateUser, lookups, listNotifications } from '../src/server/admin';
@@ -21,7 +21,7 @@ async function rejects(p: Promise<unknown>, code: string) {
 }
 function assertNoCommercial(data: unknown, where: string) {
   const json = JSON.stringify(data);
-  for (const leak of [SELL, '4321', 'commercial', 'net_revenue', 'gross_revenue', 'customer_total', 'vat_amount',
+  for (const leak of [SELL, '4321', '"commercial":', 'add_commercial', 'net_revenue', 'gross_revenue', 'customer_total', 'vat_amount',
     'vat_rate', 'discount', 'profit', 'margin', 'revenue_types', 'Selling price'])
     assert.ok(!json.includes(leak), `${where} leaked "${leak}": ${json.slice(0, 400)}`);
 }
@@ -32,12 +32,8 @@ before(async () => {
   admin = (await loadActor(a.id))!;
   const role = async (c: string) => (await one('select id from roles where code = $1', [c])).id;
   const dept = async (c: string) => (await one('select id from departments where code = $1', [c])).id;
-  const mk = async (name: string, r: string) => {
-    const u = await createUser(admin, { full_name: name, email: `${name.toLowerCase()}@x.ae`, role_id: await role(r), department_id: await dept(r) });
-    await q('update users set must_change_password = false where id = $1', [u.id]);
-    return (await loadActor(u.id))!;
-  };
-  ops = await mk('Rahman', 'operations');
+  const mk = (name: string, r: string) => mkUser(admin, name, r);
+  ops = await mk('Rahman', 'operations_manager');
   transport = await mk('Ahmed', 'transport');
   finance = await mk('Fatima', 'finance');
   customerId = (await one("insert into customers (name) values ('ABC Trading') returning id")).id;
@@ -86,10 +82,13 @@ test('Transport dashboard, lookups and notifications carry no commercial data', 
   assertNoCommercial(n, 'notifications(transport)');
 });
 
-test('Misconfiguration safety: granting Transport profit.view still shows no profit', async () => {
-  await updateUser(admin, transport.id, { overrides: [{ code: 'finance.profit.view', granted: true }] });
+test('Misconfiguration safety: even the Super Admin cannot give a Transport user selling price or profit', async () => {
+  await updateUser(admin, transport.id, { overrides: [
+    { code: 'finance.profit.view', granted: true }, { code: 'finance.selling.view', granted: true }, { code: 'documents.view_commercial', granted: true }] });
   const t2 = (await loadActor(transport.id))!;
-  assert.equal(t2.has('finance.profit.view'), true);
+  assert.equal(t2.has('finance.profit.view'), false, 'refused by the database rule');
+  assert.equal(t2.has('finance.selling.view'), false);
+  assert.equal(t2.has('documents.view_commercial'), false);
   assertNoCommercial(await getJob(t2, jobId), 'getJob(transport+profit.view)');
   await updateUser(admin, transport.id, { overrides: [] });
 });
@@ -154,12 +153,10 @@ test('Sessions die when role/permissions change; audit log is append-only', asyn
   await rejects(updateUser(admin, admin.id, { is_active: false }), 'SELF_DISABLE');
 });
 
-test('Operations without view_all only sees own requests', async () => {
-  await updateUser(admin, ops.id, { overrides: [{ code: 'jobs.view_all', granted: false }] });
-  const o2 = (await loadActor(ops.id))!;
-  assert.equal((await listJobs(o2, {})).total, 2);
-  const other = await createJob(admin, { customer_id: customerId, required_date: tomorrow, pickup_name: 'X', delivery_name: 'Y' });
-  assert.equal((await listJobs(o2, {})).total, 2);
-  await rejects(getJob(o2, other.id), 'NOT_FOUND');
-  await updateUser(admin, ops.id, { overrides: [] });
+test('Operations see their own department only', async () => {
+  assert.equal((await listJobs(ops, {})).total, 2);
+  const other = await createJob(admin, { department_id: await deptId('sea_import'), customer_id: customerId, required_date: tomorrow, pickup_name: 'X', delivery_name: 'Y' });
+  assert.equal((await listJobs(ops, {})).total, 2, 'Sea-Import job is not visible to Operations (general)');
+  await rejects(getJob(ops, other.id), 'NOT_FOUND');
+  assert.equal((await listJobs(transport, {})).total, 3, 'Transport sees every department');
 });
