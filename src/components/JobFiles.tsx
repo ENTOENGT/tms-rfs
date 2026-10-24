@@ -254,8 +254,8 @@ export function FileViewer({ files, start, base, onClose }: { files: ViewFile[];
           <button className="btn small" onClick={onClose}>Close</button>
         </div>
         <div className="viewer-body">
-          {kind === 'image' && <img key={f.id} src={`${url}?view=1`} alt={f.file_name} />}
-          {kind === 'pdf' && <PdfPages key={f.id} url={`${url}?view=1`} name={f.file_name} />}
+          {kind === 'image' && <Photo key={f.id} url={`${url}?view=1`} name={f.file_name} />}
+          {kind === 'pdf' && <SmartPreview key={f.id} url={`${url}?view=1`} name={f.file_name} />}
           {kind === 'other' && <div className="viewer-none">
             <p><b>{f.file_name}</b></p>
             <p className="muted">Excel and Word files can't be shown inside the page.<br />Use <b>Download</b> to open it on your computer.</p>
@@ -266,28 +266,47 @@ export function FileViewer({ files, start, base, onClose }: { files: ViewFile[];
   );
 }
 
-/** Draws PDF pages on the page itself, so phones (Android cannot show PDFs inside a page) never get a forced download. */
-function PdfPages({ url, name }: { url: string; name: string }) {
+/** What a file really is, from its first bytes — labels saved at upload can be wrong (e.g. a photo named .pdf). */
+function sniff(b: Uint8Array): 'pdf' | string | null {
+  const t = (i: number, ...v: number[]) => v.every((x, k) => b[i + k] === x);
+  if (t(0, 0x25, 0x50, 0x44, 0x46)) return 'pdf';                       // %PDF
+  if (t(0, 0xff, 0xd8, 0xff)) return 'image/jpeg';
+  if (t(0, 0x89, 0x50, 0x4e, 0x47)) return 'image/png';
+  if (t(0, 0x47, 0x49, 0x46)) return 'image/gif';
+  if (t(0, 0x52, 0x49, 0x46, 0x46) && t(8, 0x57, 0x45, 0x42, 0x50)) return 'image/webp';
+  // a PDF can have a few junk bytes before %PDF
+  const head = new TextDecoder('latin1').decode(b.slice(0, 1024));
+  return head.includes('%PDF') ? 'pdf' : null;
+}
+
+/** Shows a PDF page by page, or a photo — decided by the file's real contents. Phones never get a forced download. */
+function SmartPreview({ url, name }: { url: string; name: string }) {
   const box = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'pdf' | 'error'>('loading');
+  const [img, setImg] = useState('');
   const [pages, setPages] = useState(0);
   useEffect(() => {
-    let stop = false;
+    let stop = false, blobUrl = '';
     (async () => {
       try {
-        const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf');
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/legacy/build/pdf.worker.min.js', import.meta.url).toString();
         const res = await fetch(url);
         if (!res.ok) throw new Error(String(res.status));
-        const doc = await pdfjs.getDocument({ data: new Uint8Array(await res.arrayBuffer()), isEvalSupported: false }).promise;
+        const bytes = new Uint8Array(await res.arrayBuffer());
         if (stop) return;
-        setPages(doc.numPages); setState('ok');
-        const el = box.current!; el.innerHTML = '';
+        const kind = sniff(bytes);
+        if (kind && kind !== 'pdf') { blobUrl = URL.createObjectURL(new Blob([bytes], { type: kind })); setImg(blobUrl); return; }
+        if (!kind) throw new Error('unknown');
+        const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf');
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/legacy/build/pdf.worker.min.js', import.meta.url).toString();
+        const doc = await pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise;
+        if (stop) return;
+        setPages(doc.numPages); setState('pdf');
+        const el = box.current; if (!el) return;
+        el.innerHTML = '';
         const width = Math.min(el.clientWidth - 24, 1000);
         for (let n = 1; n <= Math.min(doc.numPages, 50) && !stop; n++) {
           const page = await doc.getPage(n);
-          const base = page.getViewport({ scale: 1 });
-          const scale = width / base.width, ratio = window.devicePixelRatio || 1;
+          const scale = width / page.getViewport({ scale: 1 }).width, ratio = window.devicePixelRatio || 1;
           const vp = page.getViewport({ scale: scale * ratio });
           const c = document.createElement('canvas');
           c.width = vp.width; c.height = vp.height; c.style.width = `${width}px`; c.setAttribute('aria-label', `${name} page ${n}`);
@@ -296,14 +315,21 @@ function PdfPages({ url, name }: { url: string; name: string }) {
         }
       } catch { if (!stop) setState('error'); }
     })();
-    return () => { stop = true; };
+    return () => { stop = true; if (blobUrl) URL.revokeObjectURL(blobUrl); };
   }, [url, name]);
+  if (img) return <img src={img} alt={name} />;
   return <div className="viewer-pdf">
-    {state === 'loading' && <p className="muted" style={{ textAlign: 'center' }}>Opening PDF…</p>}
-    {state === 'error' && <div className="viewer-none"><p className="muted">This PDF could not be shown here. Try <b>Open in new tab</b> or <b>Download</b>.</p></div>}
-    {state === 'ok' && pages > 50 && <p className="muted small" style={{ textAlign: 'center' }}>Showing the first 50 of {pages} pages. Download to see all.</p>}
+    {state === 'loading' && <p className="muted" style={{ textAlign: 'center' }}>Opening file…</p>}
+    {state === 'error' && <div className="viewer-none"><p className="muted">This file could not be shown here. Try <b>Open in new tab</b> or <b>Download</b>.</p></div>}
+    {state === 'pdf' && pages > 50 && <p className="muted small" style={{ textAlign: 'center' }}>Showing the first 50 of {pages} pages. Download to see all.</p>}
     <div ref={box} className="viewer-pdf-pages" />
   </div>;
+}
+
+/** A photo; if the browser can't draw it (wrong label, odd format) fall back to checking the real contents. */
+function Photo({ url, name }: { url: string; name: string }) {
+  const [bad, setBad] = useState(false);
+  return bad ? <SmartPreview url={url} name={name} /> : <img src={url} alt={name} onError={() => setBad(true)} />;
 }
 
 /** A file name that opens the viewer when clicked. Pass the whole list so the viewer can page through it. */
