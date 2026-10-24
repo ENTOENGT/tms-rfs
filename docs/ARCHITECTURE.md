@@ -280,6 +280,16 @@ Permissions: runs.view_all, runs.view_department, runs.create, runs.cancel, runs
 Defaults — Messenger Manager: view_all, assign, update_status, cancel · Messenger: update_status ·
 Operations Manager and Sub-user: view_department, create, cancel.
 
+### File viewer (no forced downloads)
+
+Clicking any file (POD, job document, Documents page, messenger proof) opens it **on the page** in a
+viewer (`FileViewer` in `src/components/JobFiles.tsx`): photos as images, PDFs drawn page by page with
+pdf.js (bundled, `isEvalSupported: false`) so Android phones also show them, Excel/Word show a message.
+Buttons: Previous/Next, Open in new tab, **Download**, Close. The same permission-checked routes serve
+both: `/api/documents/{id}/download?view=1` and `/api/run-files/{id}?view=1` redirect to a 2-minute
+signed link that opens in the browser; without `view=1` the link saves the file. Customer invoices stay
+hidden from Transport for viewing exactly as for downloading. `X-Frame-Options` is `SAMEORIGIN`.
+
 ## 16. Phase status
 
 | Phase | Status |
@@ -292,5 +302,6 @@ Operations Manager and Sub-user: view_department, create, cancel.
 | 6 Reports — 7 reports incl. department, Excel/CSV export, print/PDF, export audit | Done |
 | Structure stage 1 — departments, managers, department-only visibility | Done |
 | Structure stage 2 — messenger runs (request, assign, collected, delivered with photo) | Done |
+| File viewer — files open on the page, Download is optional | Done |
 | Structure stage 3 — phone app (from a link) for drivers and messengers | Next |
 | 7 Email notifications · 8 Saved views, column prefs, live ops table, performance | Planned |

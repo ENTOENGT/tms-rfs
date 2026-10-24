@@ -78,9 +78,12 @@ test('Customer invoice stays invisible to Transport everywhere', async () => {
   const json = JSON.stringify(tj) + JSON.stringify(await listDocuments(transport, {})) + JSON.stringify(await listNotifications(transport));
   for (const leak of ['INV-777', 'Customer Invoice', '777.77', 'commercial']) assert.ok(!json.includes(leak), `leaked ${leak}`);
   await rejects(downloadUrl(transport, invoiceId), 'NOT_FOUND');
+  await rejects(downloadUrl(transport, invoiceId, true), 'NOT_FOUND');      // viewing is checked exactly like downloading
   await rejects(deleteDocument(transport, invoiceId), 'NOT_FOUND');
   assert.ok((await getJob(ops, jobId)).documents.some((d: any) => d.file_name === 'INV-777.pdf'));
   assert.match(await downloadUrl(ops, invoiceId), /dev-storage\?key=/);
+  assert.doesNotMatch(await downloadUrl(ops, invoiceId), /inline=1/);       // Download button saves the file
+  assert.match(await downloadUrl(ops, invoiceId, true), /inline=1/);       // viewer opens it on the page
   assert.equal((await listDocuments(ops, { type: 'customer_invoice' })).total, 1);
 });
 
