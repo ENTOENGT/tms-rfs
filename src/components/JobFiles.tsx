@@ -8,7 +8,7 @@ const MAX = 10 * 1024 * 1024;
 export const fmtSize = (b: number) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
 /** Phone photos are often 4–8 MB. Shrink big photos to max 2000px before upload (keeps them readable, saves storage). */
-async function shrinkImage(file: File): Promise<File> {
+export async function shrinkImage(file: File): Promise<File> {
   if (!/^image\/(jpeg|png)$/.test(file.type) || file.size < 1.5 * 1024 * 1024) return file;
   try {
     const bmp = await createImageBitmap(file);

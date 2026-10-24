@@ -10,7 +10,8 @@ export type Perm =
   | 'reports.view' | 'reports.export'
   | 'drivers.manage' | 'vehicles.manage' | 'customers.manage' | 'locations.manage'
   | 'users.manage' | 'roles.manage' | 'settings.manage' | 'audit.view'
-  | 'users.manage_department' | 'roles.manage_department';
+  | 'users.manage_department' | 'roles.manage_department'
+  | 'runs.view_all' | 'runs.view_department' | 'runs.create' | 'runs.cancel' | 'runs.assign' | 'runs.update_status';
 
 export type Side = 'admin' | 'operations' | 'transport' | 'messenger' | 'finance';
 

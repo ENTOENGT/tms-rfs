@@ -23,6 +23,7 @@ const NAV: { href: string; label: string; perm?: string | string[]; phase?: numb
   { href: '/financials', label: 'Financials', perm: ['finance.buying.view', 'finance.selling.view'] },
   { href: '/reports', label: 'Reports', perm: 'reports.view' },
   { href: '/documents', label: 'Documents', perm: 'jobs.view' },
+  { href: '/runs', label: 'Messenger runs', perm: ['runs.view_all', 'runs.view_department', 'runs.create', 'runs.update_status'] },
 ];
 const ADMIN: { href: string; label: string; perm: string[]; phase?: number }[] = [
   { href: '/users', label: 'Users', perm: ['users.manage', 'users.manage_department'] },
@@ -44,7 +45,7 @@ function Bell() {
         <div className="dropdown" onMouseLeave={() => setOpen(false)}>
           {n.rows.length === 0 && <div style={{ padding: 12 }} className="muted">You're all caught up.</div>}
           {n.rows.map((r) => (
-            <Link key={r.id} href={r.job_id ? `/jobs/${r.job_id}` : '#'} className={r.read_at ? '' : 'unread'} onClick={() => setOpen(false)}>
+            <Link key={r.id} href={r.run_id ? `/runs/${r.run_id}` : r.job_id ? `/jobs/${r.job_id}` : '#'} className={r.read_at ? '' : 'unread'} onClick={() => setOpen(false)}>
               {r.title}<div className="muted small">{fmtDateTime(r.created_at)}</div>
             </Link>
           ))}

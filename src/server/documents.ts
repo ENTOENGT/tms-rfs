@@ -46,12 +46,12 @@ async function visibleJob(actor: Actor, jobId: string, db?: Db, lock = false) {
 }
 
 // ------------------------------------------------------------ ticket (stateless, signed)
-function sign(payload: object) {
+export function sign(payload: object) {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const mac = createHmac('sha256', process.env.SESSION_SECRET || 'dev-secret').update(body).digest('base64url');
   return `${body}.${mac}`;
 }
-function unsign(ticket: unknown): any {
+export function unsign(ticket: unknown): any {
   if (typeof ticket !== 'string' || !ticket.includes('.')) throw bad('Upload ticket missing');
   const [body, mac] = ticket.split('.');
   const want = createHmac('sha256', process.env.SESSION_SECRET || 'dev-secret').update(body).digest('base64url');

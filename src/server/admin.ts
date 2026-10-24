@@ -48,7 +48,7 @@ export async function lookups(actor: Actor) {
 
 export async function listNotifications(actor: Actor) {
   try { const { runPodReminders } = await import('./documents'); await runPodReminders(); } catch (e) { console.error('POD reminders', e); }
-  const rows = await q(`select id, type, title, job_id, read_at, created_at from notifications
+  const rows = await q(`select id, type, title, job_id, run_id, read_at, created_at from notifications
     where user_id = $1 order by created_at desc limit 50`, [actor.id]);
   return { unread: rows.filter((r) => !r.read_at).length, rows };
 }
