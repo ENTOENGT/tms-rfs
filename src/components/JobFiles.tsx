@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, fmtDate, fmtDateTime } from './api';
 
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.xlsx,.docx';
@@ -118,8 +118,8 @@ export function PodCard({ job, onChange }: { job: any; onChange: (j: any) => voi
         </dl>
       )}
       {pods.length > 0 && <ul style={{ listStyle: 'none', padding: 0, margin: '10px 0 0', fontSize: 13 }}>
-        {pods.map((d: any) => <li key={d.id} style={{ padding: '3px 0' }}>
-          <a href={`/api/documents/${d.id}/download`} target="_blank" rel="noopener">{d.file_name}</a> <span className="muted small">{fmtSize(d.size_bytes)}</span></li>)}
+        {pods.map((d: any, i: number) => <li key={d.id} style={{ padding: '3px 0' }}>
+          <FileLink files={pods} index={i} base={docUrl} /> <span className="muted small">{fmtSize(d.size_bytes)}</span></li>)}
       </ul>}
       {job.pod_status === 'pending' && pods.length === 0 && <p className="muted small" style={{ margin: '10px 0 0' }}>No POD uploaded yet.</p>}
       {(canUpload || job.permissions.verify_pod) && <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
@@ -162,9 +162,9 @@ export function DocumentsTab({ job, onChange }: { job: any; onChange: (j: any) =
       <div className="table-wrap"><table className="t">
         <thead><tr><th>Type</th><th>File</th><th>Size</th><th>Uploaded</th><th /></tr></thead>
         <tbody>
-          {job.documents.map((d: any) => <tr key={d.id}>
+          {job.documents.map((d: any, i: number) => <tr key={d.id}>
             <td>{d.document_type}</td>
-            <td><a href={`/api/documents/${d.id}/download`} target="_blank" rel="noopener">{d.file_name}</a></td>
+            <td><FileLink files={job.documents} index={i} base={docUrl} /></td>
             <td>{fmtSize(d.size_bytes)}</td>
             <td>{d.uploaded_by_name ?? '—'} <span className="muted small">· {fmtDateTime(d.created_at)}</span></td>
             <td style={{ textAlign: 'right' }}>{d.can_delete && <button className="btn small danger" onClick={() => remove(d)}>Remove</button>}</td>
@@ -214,3 +214,106 @@ export function NotesTab({ job, onChange }: { job: any; onChange: (j: any) => vo
     </div>
   );
 }
+
+/* ---------- file viewer: files open on the page first; downloading is a separate choice ---------- */
+type ViewFile = { id: string; file_name: string; mime_type?: string | null; size_bytes?: number | null };
+const kindOf = (f: ViewFile) => {
+  const m = (f.mime_type ?? '').toLowerCase(), n = f.file_name.toLowerCase();
+  if (m.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/.test(n)) return 'image';
+  if (m === 'application/pdf' || n.endsWith('.pdf')) return 'pdf';
+  return 'other';
+};
+
+export function FileViewer({ files, start, base, onClose }: { files: ViewFile[]; start: number; base: (id: string) => string; onClose: () => void }) {
+  const [i, setI] = useState(start);
+  const f = files[i];
+  const url = base(f.id);
+  const kind = kindOf(f);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight') setI((n) => Math.min(files.length - 1, n + 1));
+      if (e.key === 'ArrowLeft') setI((n) => Math.max(0, n - 1));
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [files.length, onClose]);
+  return (
+    <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal viewer" role="dialog" aria-label={`View ${f.file_name}`}>
+        <div className="viewer-head">
+          <b className="viewer-name" title={f.file_name}>{f.file_name}</b>
+          {f.size_bytes ? <span className="muted small">{fmtSize(f.size_bytes)}</span> : null}
+          {files.length > 1 && <span className="muted small">{i + 1} of {files.length}</span>}
+          <span className="spacer" />
+          {files.length > 1 && <>
+            <button className="btn small" disabled={i === 0} onClick={() => setI(i - 1)}>‹ Previous</button>
+            <button className="btn small" disabled={i === files.length - 1} onClick={() => setI(i + 1)}>Next ›</button></>}
+          <a className="btn small" href={`${url}?view=1`} target="_blank" rel="noopener">Open in new tab</a>
+          <a className="btn small primary" href={url}>Download</a>
+          <button className="btn small" onClick={onClose}>Close</button>
+        </div>
+        <div className="viewer-body">
+          {kind === 'image' && <img key={f.id} src={`${url}?view=1`} alt={f.file_name} />}
+          {kind === 'pdf' && <PdfPages key={f.id} url={`${url}?view=1`} name={f.file_name} />}
+          {kind === 'other' && <div className="viewer-none">
+            <p><b>{f.file_name}</b></p>
+            <p className="muted">Excel and Word files can't be shown inside the page.<br />Use <b>Download</b> to open it on your computer.</p>
+          </div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Draws PDF pages on the page itself, so phones (Android cannot show PDFs inside a page) never get a forced download. */
+function PdfPages({ url, name }: { url: string; name: string }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [pages, setPages] = useState(0);
+  useEffect(() => {
+    let stop = false;
+    (async () => {
+      try {
+        const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf');
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/legacy/build/pdf.worker.min.js', import.meta.url).toString();
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(String(res.status));
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(await res.arrayBuffer()), isEvalSupported: false }).promise;
+        if (stop) return;
+        setPages(doc.numPages); setState('ok');
+        const el = box.current!; el.innerHTML = '';
+        const width = Math.min(el.clientWidth - 24, 1000);
+        for (let n = 1; n <= Math.min(doc.numPages, 50) && !stop; n++) {
+          const page = await doc.getPage(n);
+          const base = page.getViewport({ scale: 1 });
+          const scale = width / base.width, ratio = window.devicePixelRatio || 1;
+          const vp = page.getViewport({ scale: scale * ratio });
+          const c = document.createElement('canvas');
+          c.width = vp.width; c.height = vp.height; c.style.width = `${width}px`; c.setAttribute('aria-label', `${name} page ${n}`);
+          el.appendChild(c);
+          await page.render({ canvasContext: c.getContext('2d')!, viewport: vp }).promise;
+        }
+      } catch { if (!stop) setState('error'); }
+    })();
+    return () => { stop = true; };
+  }, [url, name]);
+  return <div className="viewer-pdf">
+    {state === 'loading' && <p className="muted" style={{ textAlign: 'center' }}>Opening PDF…</p>}
+    {state === 'error' && <div className="viewer-none"><p className="muted">This PDF could not be shown here. Try <b>Open in new tab</b> or <b>Download</b>.</p></div>}
+    {state === 'ok' && pages > 50 && <p className="muted small" style={{ textAlign: 'center' }}>Showing the first 50 of {pages} pages. Download to see all.</p>}
+    <div ref={box} className="viewer-pdf-pages" />
+  </div>;
+}
+
+/** A file name that opens the viewer when clicked. Pass the whole list so the viewer can page through it. */
+export function FileLink({ files, index, base }: { files: ViewFile[]; index: number; base: (id: string) => string }) {
+  const [open, setOpen] = useState(false);
+  const f = files[index];
+  return <>
+    <a href={`${base(f.id)}?view=1`} onClick={(e) => { if (e.ctrlKey || e.metaKey) return; e.preventDefault(); setOpen(true); }}>{f.file_name}</a>
+    {open && <FileViewer files={files} start={index} base={base} onClose={() => setOpen(false)} />}
+  </>;
+}
+export const docUrl = (id: string) => `/api/documents/${id}/download`;
+export const runFileUrl = (id: string) => `/api/run-files/${id}`;

@@ -204,9 +204,9 @@ async function visibleDoc(actor: Actor, docId: string, db?: Db) {
   return d;
 }
 
-export async function downloadUrl(actor: Actor, docId: string) {
+export async function downloadUrl(actor: Actor, docId: string, inline = false) {
   const d = await visibleDoc(actor, docId);
-  return fileStore().downloadUrl(d.storage_path, d.file_name);
+  return fileStore().downloadUrl(d.storage_path, d.file_name, inline);
 }
 
 export async function deleteDocument(actor: Actor, docId: string) {

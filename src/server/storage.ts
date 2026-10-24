@@ -21,7 +21,8 @@ export interface FileStore {
   driver: 'supabase' | 'local';
   createUpload(key: string, contentType: string): Promise<UploadTarget>;
   stat(key: string): Promise<{ size: number; contentType: string | null } | null>;
-  downloadUrl(key: string, fileName: string): Promise<string>;
+  /** inline=true opens the file in the browser (viewer); otherwise it is saved as a download. */
+  downloadUrl(key: string, fileName: string, inline?: boolean): Promise<string>;
   remove(key: string): Promise<void>;
 }
 
@@ -75,8 +76,8 @@ function supabaseStore(rawUrl: string, key: string): FileStore {
       const d: any = data;
       return { size: Number(d.size ?? d.metadata?.size ?? 0), contentType: d.contentType ?? d.metadata?.mimetype ?? null };
     },
-    async downloadUrl(k, fileName) {
-      const { data, error } = await bucket().createSignedUrl(k, 120, { download: fileName });
+    async downloadUrl(k, fileName, inline = false) {
+      const { data, error } = await bucket().createSignedUrl(k, 120, inline ? undefined : { download: fileName });
       if (error || !data) fail('preparing the download', error);
       return data!.signedUrl;
     },
@@ -113,7 +114,7 @@ function localStore(): FileStore {
         return { size: s.size, contentType: ct };
       } catch { return null; }
     },
-    async downloadUrl(k, fileName) { return link(k, 'get', `&name=${encodeURIComponent(fileName)}`); },
+    async downloadUrl(k, fileName, inline = false) { return link(k, 'get', `&name=${encodeURIComponent(fileName)}${inline ? '&inline=1' : ''}`); },
     async remove(k) { await unlink(localPath(k)).catch(() => {}); await unlink(localPath(k) + '.type').catch(() => {}); },
   };
 }

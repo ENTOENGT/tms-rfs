@@ -341,12 +341,12 @@ export async function confirmRunUpload(actor: Actor, id: string, b: any) {
   return getRun(actor, id);
 }
 
-export async function runFileUrl(actor: Actor, fileId: string) {
+export async function runFileUrl(actor: Actor, fileId: string, inline = false) {
   if (!UUID.test(fileId)) throw notFound('File');
   const f = await one('select * from messenger_run_files where id = $1 and deleted_at is null', [fileId]);
   if (!f) throw notFound('File');
   await loadRun(actor, f.run_id);                 // same visibility as the run itself
-  return fileStore().downloadUrl(f.storage_path, f.file_name);
+  return fileStore().downloadUrl(f.storage_path, f.file_name, inline);
 }
 
 // ------------------------------------------------------------ dashboard counts
