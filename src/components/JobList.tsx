@@ -11,6 +11,7 @@ type Filters = Record<string, string>;
 export default function JobList({ mode }: { mode: 'requests' | 'jobs' }) {
   const { me, can, lk } = useMe();
   const fin = me.financial_access;
+  const manyDepts = can('jobs.view_all');           // sees every department → show which one each job is from
   const sp = useSearchParams();
   const initial: Filters = { q: sp.get('q') ?? '', status: sp.get('status') ?? (mode === 'requests' ? OPEN : ''),
     action_required: sp.get('action_required') ?? '', sort: 'required_date', dir: 'desc', page: '1' };
@@ -47,6 +48,11 @@ export default function JobList({ mode }: { mode: 'requests' | 'jobs' }) {
               {mode === 'requests' && <option value={OPEN}>Open requests</option>}
               {lk.job_statuses.map((s: any) => <option key={s.code} value={s.code}>{s.name}</option>)}
             </select></label>
+          {manyDepts && <label className="f"><span>Department</span>
+            <select value={f.department_id ?? ''} onChange={set('department_id')}>
+              <option value="">All departments</option>
+              {lk.departments.filter((d: any) => d.side === 'operations').map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select></label>}
           <label className="f"><span>Customer</span>
             <select value={f.customer_id ?? ''} onChange={set('customer_id')}>
               <option value="">All customers</option>
@@ -90,7 +96,7 @@ export default function JobList({ mode }: { mode: 'requests' | 'jobs' }) {
         <div className="table-wrap">
           <table className="t">
             <thead><tr>
-              <Th k="job_number">Job</Th><Th k="required_date">Required</Th><Th>Slot</Th><Th k="customer">Customer</Th>
+              <Th k="job_number">Job</Th>{manyDepts && <Th>Department</Th>}<Th k="required_date">Required</Th><Th>Slot</Th><Th k="customer">Customer</Th>
               <Th>BOE</Th><Th>Pickup</Th><Th>Delivery</Th><Th>Vehicle</Th><Th k="driver">Driver</Th><Th k="status">Status</Th>
               {fin.sellingView && <Th k="net_revenue" num>Selling</Th>}
               {fin.buyingView && <Th k="total_cost" num>Cost</Th>}
@@ -103,6 +109,7 @@ export default function JobList({ mode }: { mode: 'requests' | 'jobs' }) {
                 return (
                   <tr key={j.id}>
                     <td><Link href={`/jobs/${j.id}`}><b>{j.job_number}</b></Link>{j.priority === 'urgent' && <div className="flag">Urgent</div>}</td>
+                    {manyDepts && <td>{j.department_name ?? '—'}</td>}
                     <td>{fmtDate(j.required_date)}</td><td>{slot(j.slot_from, j.slot_to)}</td><td>{j.customer_name}</td>
                     <td>{j.boe_number ?? '—'}</td><td>{j.pickup_name}</td><td>{j.delivery_name}</td>
                     <td>{j.vehicle_number ?? <span className="muted">{j.requested_vehicle_type ?? '—'}</span>}</td>

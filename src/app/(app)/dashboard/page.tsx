@@ -11,7 +11,7 @@ export default function Dashboard() {
   const [custom, setCustom] = useState<[string, string]>(['', '']);
   const [k, setK] = useState<any>(null);
   const [from, to] = key === 'custom' ? custom : period(key, lk.timezone);
-  useEffect(() => { if (from && to) api(`/api/dashboard?from=${from}&to=${to}`).then(setK); }, [from, to]);
+  useEffect(() => { if (from && to && me.permissions.includes('jobs.view')) api(`/api/dashboard?from=${from}&to=${to}`).then(setK); }, [from, to]);
   const f = k?.financials ?? {};
   const cur = lk.currency;
   const Kpi = ({ n, label, href, attn }: { n: any; label: string; href?: string; attn?: boolean }) =>
@@ -33,6 +33,8 @@ export default function Dashboard() {
           <input type="date" style={{ width: 150 }} value={custom[1]} onChange={(e) => setCustom([custom[0], e.target.value])} aria-label="To" />
         </>}
       </div>
+      {!me.permissions.includes('jobs.view') && <div className="panel"><p style={{ margin: 0 }}>Welcome. Use <b>Users</b> and <b>Roles</b> in the menu to set up your team. Your department's own tasks will appear here in the next update.</p></div>}
+      {me.permissions.includes('jobs.view') && <>
       <div className="kpis">
         <Kpi n={k?.today_jobs} label="Today's jobs" href="/jobs" />
         <Kpi n={k?.pending} label="Pending assignment" href="/requests" attn />
@@ -50,6 +52,7 @@ export default function Dashboard() {
           {f.profit && <div className="kpi money"><b>{f.profit.margin_pct ?? '–'}%</b><span>Margin</span></div>}
         </div>
       )}
+      </>}
       <p className="muted small">Counts cover jobs with a required date from {from} to {to}. Charts and the live operations table arrive in Phase 8.</p>
     </div>
   );

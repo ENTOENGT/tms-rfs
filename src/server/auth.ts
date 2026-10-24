@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 import { ApiError, audit, forbidden, one, q } from './db';
-import { financialAccess, FinancialAccess, Perm } from '../lib/permissions';
+import { financialAccess, FinancialAccess, Perm, Side } from '../lib/permissions';
 
 export const SESSION_COOKIE = 'tms_session';
 const SESSION_HOURS = 12;
@@ -28,7 +28,8 @@ export const cookieOptions = {
 
 export interface Actor {
   id: string; full_name: string; email: string;
-  role_code: string; role_name: string; department_code: string | null; department_name: string | null;
+  role_code: string; role_name: string; role_is_manager: boolean;
+  department_id: string | null; department_code: string | null; department_name: string | null; department_side: Side | null;
   must_change_password: boolean; isSuperAdmin: boolean;
   perms: Set<Perm>; fin: FinancialAccess;
   has(p: Perm): boolean;
@@ -37,25 +38,23 @@ export interface Actor {
 export async function loadActor(userId: string, version?: number): Promise<Actor | null> {
   const u = await one(
     `select u.id, u.full_name, u.email, u.token_version, u.must_change_password, u.is_active,
-            r.id role_id, r.code role_code, r.name role_name, d.code department_code, d.name department_name
+            r.code role_code, r.name role_name, r.is_manager role_is_manager,
+            d.id department_id, d.code department_code, d.name department_name, d.side department_side
        from users u join roles r on r.id = u.role_id left join departments d on d.id = u.department_id
       where u.id = $1 and u.deleted_at is null`, [userId]);
   if (!u || !u.is_active) return null;
   if (version !== undefined && u.token_version !== version) return null;
-  const isSuperAdmin = u.role_code === 'super_admin';
-  const rows = isSuperAdmin
-    ? await q<{ code: Perm }>('select code from permissions')
-    : await q<{ code: Perm }>(
-      `select permission_code code from role_permissions rp where rp.role_id = $1
-         and not exists (select 1 from user_permission_overrides o where o.user_id = $2 and o.permission_code = rp.permission_code and not o.granted)
-       union
-       select permission_code from user_permission_overrides where user_id = $2 and granted`, [u.role_id, u.id]);
+  // One rule set, kept in the database function user_has_perm (migration 005):
+  // role + per-user exceptions, Super Admin = everything, and selling price can never
+  // reach a Transport or Messenger department.
+  const rows = await q<{ code: Perm }>('select code from permissions where user_has_perm($1, code)', [u.id]);
   const perms = new Set(rows.map((r) => r.code));
   const has = (p: Perm) => perms.has(p);
   return {
     id: u.id, full_name: u.full_name, email: u.email, role_code: u.role_code, role_name: u.role_name,
-    department_code: u.department_code, department_name: u.department_name,
-    must_change_password: u.must_change_password, isSuperAdmin, perms, has, fin: financialAccess(has),
+    role_is_manager: u.role_is_manager, department_id: u.department_id, department_code: u.department_code,
+    department_name: u.department_name, department_side: u.department_side,
+    must_change_password: u.must_change_password, isSuperAdmin: u.role_code === 'super_admin', perms, has, fin: financialAccess(has),
   };
 }
 

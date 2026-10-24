@@ -12,9 +12,10 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { PoolClient } from 'pg';
 import { Actor, requirePerm } from './auth';
-import { ApiError, audit, bad, Db, forbidden, getSetting, notFound, one, pool, q, tx } from './db';
+import { ApiError, audit, bad, Db, forbidden, getSetting, notFound, one, q, tx } from './db';
 import { getJob, usersWithPermission } from './jobs';
 import { fileStore } from './storage';
+import { jobScope } from './scope';
 
 const UUID = /^[0-9a-f-]{36}$/i;
 export const MAX_BYTES = 10 * 1024 * 1024;
@@ -36,8 +37,7 @@ async function visibleJob(actor: Actor, jobId: string, db?: Db, lock = false) {
   if (!UUID.test(jobId)) throw notFound('Job');
   if (!actor.has('jobs.view')) throw forbidden();
   const p: unknown[] = [jobId];
-  let scope = '';
-  if (!actor.has('jobs.view_all')) { p.push(actor.id); scope = ' and t.requested_by = $2'; }
+  const scope = jobScope(actor, p);
   const job = await one(`select t.id, t.job_number, t.status_code, t.pod_status, t.requested_by, s.stage, s.name status_name
       from transport_requests t join job_statuses s on s.code = t.status_code
      where t.id = $1 and t.deleted_at is null${scope}${lock ? ' for update of t' : ''}`, p, db);
@@ -138,7 +138,7 @@ async function recordPod(c: PoolClient, actor: Actor, job: any, documentId: stri
     await c.query(`update transport_requests set status_code = 'pod_received' where id = $1`, [job.id]);
     await audit(c, actor, { entity_type: 'job', entity_id: job.id, job_id: job.id, action: 'Status changed', field: 'Status', old_value: job.status_name, new_value: 'POD Received' });
   }
-  const verifiers = await usersWithPermission(c, 'pod.verify', actor.id);
+  const verifiers = await usersWithPermission(c, 'pod.verify', actor.id, job.id);
   await notify(c, [job.requested_by !== actor.id ? job.requested_by : null, ...verifiers.map((u) => u.id)], 'pod.uploaded', `POD uploaded for ${job.job_number}`, job.id);
 }
 
@@ -164,7 +164,7 @@ export async function reviewPod(actor: Actor, jobId: string, b: any) {
         await c.query(`update transport_requests set status_code = 'pod_pending' where id = $1`, [jobId]);
       await audit(c, actor, { entity_type: 'job', entity_id: jobId, job_id: jobId, action: 'POD rejected', field: 'POD', old_value: job.pod_status, new_value: `rejected — ${reason}` });
       const t = await one('select assigned_by from transport_assignments where job_id = $1 and is_current', [jobId], c);
-      const uploaders = await usersWithPermission(c, 'pod.upload', actor.id);
+      const uploaders = await usersWithPermission(c, 'pod.upload', actor.id, jobId);
       await notify(c, [t?.assigned_by, ...uploaders.map((u) => u.id)], 'pod.rejected', `POD rejected for ${job.job_number}`, jobId);
     }
   });
@@ -176,7 +176,7 @@ export async function listDocuments(actor: Actor, p: Record<string, string>) {
   if (!actor.has('jobs.view')) throw forbidden();
   const params: unknown[] = [canSeeCommercialDocs(actor)];
   let where = 'where d.deleted_at is null and t.deleted_at is null and ($1 or not dt.is_commercial)';
-  if (!actor.has('jobs.view_all')) { params.push(actor.id); where += ` and t.requested_by = $${params.length}`; }
+  where += jobScope(actor, params);
   if (p.type) { params.push(p.type); where += ` and d.document_type_code = $${params.length}`; }
   if (p.q?.trim()) {
     params.push('%' + p.q.trim().replace(/[%_\\]/g, '\\$&') + '%');
@@ -290,9 +290,9 @@ export async function runPodReminders(force = false) {
        and a.actual_delivery_at < now() - make_interval(hours => $1)
        and (t.pod_reminded_at is null or t.pod_reminded_at < now() - make_interval(hours => $1))`, [hours]);
   if (!due.length) return 0;
-  const people = await usersWithPermission(pool(), 'pod.upload');
   await tx(async (c) => {
     for (const j of due) {
+      const people = await usersWithPermission(c, 'pod.upload', undefined, j.id);
       await notify(c, people.map((u) => u.id), 'pod.reminder',
         j.pod_status === 'rejected' ? `POD still needs re-uploading for ${j.job_number}` : `POD still missing for ${j.job_number}`, j.id);
       await c.query('update transport_requests set pod_reminded_at = now() where id = $1', [j.id]);

@@ -140,7 +140,7 @@ export default function JobDetail({ params }: { params: { id: string } }) {
           </div>
           {tab === 'overview' && <>
             <div className="panel"><h2>Request</h2><KV rows={[
-              ['Customer', job.customer_name], ['Required', job.slot_from ? `${fmtDate(job.required_date)}, ${slot(job.slot_from, job.slot_to)}` : fmtDate(job.required_date)],
+              ['Department', job.department_name], ['Customer', job.customer_name], ['Required', job.slot_from ? `${fmtDate(job.required_date)}, ${slot(job.slot_from, job.slot_to)}` : fmtDate(job.required_date)],
               ['BOE number', job.boe_number], ['Customer reference', job.customer_reference], ['Email subject', job.email_subject],
               ['Shipment / booking', [job.shipment_number, job.booking_reference].filter(Boolean).join(' / ') || null],
               ['Vehicle type needed', job.requested_vehicle_type]]} /></div>

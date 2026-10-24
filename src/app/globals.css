@@ -60,6 +60,7 @@ input, select, textarea { font: inherit; color: inherit; border: 1px solid var(-
 input:focus, select:focus, textarea:focus { border-color: var(--brand-bronze); outline: none; box-shadow: 0 0 0 3px #e8a80833; }
 input[type=checkbox], input[type=radio] { accent-color: var(--brand-bronze); }
 textarea { min-height: 72px; resize: vertical; }
+input:disabled, select:disabled, textarea:disabled { background: #f3f2ef; color: var(--muted); }
 .btn { font: inherit; font-weight: 500; border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 7px 14px; border-radius: var(--radius-sm); cursor: pointer; white-space: nowrap; }
 .btn:hover { background: #f6f5f2; }
 .btn.primary { background: var(--brand-gold); border-color: #d49a06; color: var(--ink); font-weight: 600; }

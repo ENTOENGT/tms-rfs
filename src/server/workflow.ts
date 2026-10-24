@@ -8,6 +8,7 @@ import { Actor, requirePerm } from './auth';
 import { ApiError, audit, bad, Db, forbidden, getSetting, notFound, one, q, tx } from './db';
 import { getJob, usersWithPermission } from './jobs';
 import { canMove } from './transitions';
+import { jobScope } from './scope';
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const LOCAL_DT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
@@ -24,8 +25,7 @@ async function notify(db: Db, userIds: (string | null | undefined)[], type: stri
 async function jobForUpdate(c: PoolClient, actor: Actor, id: string) {
   if (!UUID.test(id)) throw notFound('Job');
   const p: unknown[] = [id];
-  let scope = '';
-  if (!actor.has('jobs.view_all')) { p.push(actor.id); scope = ' and t.requested_by = $2'; }
+  const scope = jobScope(actor, p);
   const job = await one(`select t.*, s.stage, s.name status_name from transport_requests t
       join job_statuses s on s.code = t.status_code
      where t.id = $1 and t.deleted_at is null${scope} for update of t`, p, c);
@@ -221,13 +221,13 @@ export async function changeStatus(actor: Actor, jobId: string, b: any) {
 
     // Who hears about it
     if (job.status_code === 'draft' && to === 'pending_assignment') {
-      const t = await usersWithPermission(c, 'jobs.assign_driver', actor.id);
+      const t = await usersWithPermission(c, 'jobs.assign_driver', actor.id, jobId);
       await notify(c, t.map((u) => u.id), 'job.created', `New transport request ${job.job_number}`, jobId);
     }
     if (to === 'delivered') await notify(c, [job.requested_by], 'job.delivered', `${job.job_number} delivered`, jobId);
     if (to === 'picked_up') await notify(c, [job.requested_by], 'job.picked_up', `${job.job_number} picked up`, jobId);
     if (to === 'cancelled') {
-      const t = asg ? await usersWithPermission(c, 'jobs.assign_driver', actor.id) : [];
+      const t = asg ? await usersWithPermission(c, 'jobs.assign_driver', actor.id, jobId) : [];
       await notify(c, [...t.map((u) => u.id), job.requested_by !== actor.id ? job.requested_by : null], 'job.cancelled', `${job.job_number} cancelled`, jobId);
     }
   });
@@ -301,6 +301,16 @@ export async function updateRequest(actor: Actor, jobId: string, b: any) {
       const oldN = typeof old === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(old) ? old.slice(0, 5) : old;
       if (String(oldN ?? '') !== String(v ?? '') && !(typeof v === 'number' && Number(oldN) === v)) changes[k] = [oldN, v];
     }
+    // Only the Super Admin moves a job to another department.
+    if (b.department_id !== undefined && b.department_id !== job.department_id) {
+      if (!actor.isSuperAdmin) throw forbidden('Only the Super Admin can move a job to another department');
+      const d = /^[0-9a-f-]{36}$/i.test(String(b.department_id))
+        ? await one(`select id, name from departments where id = $1 and side = 'operations'`, [b.department_id], c) : null;
+      if (!d) throw bad('Choose an operations department');
+      const old = await one('select name from departments where id = $1', [job.department_id], c);
+      await c.query('update transport_requests set department_id = $2, updated_at = now() where id = $1', [jobId, d.id]);
+      await audit(c, actor, { entity_type: 'job', entity_id: jobId, job_id: jobId, action: 'Request updated', field: 'Department', old_value: old?.name, new_value: d.name });
+    }
     if (!Object.keys(changes).length) return;
     if (changes.pickup_name && !changes.pickup_name[1]) throw bad('Pickup location is required');
     if (changes.delivery_name && !changes.delivery_name[1]) throw bad('Delivery location is required');
@@ -327,7 +337,7 @@ export async function updateRequest(actor: Actor, jobId: string, b: any) {
     }
     await c.query('select refresh_job_search($1)', [jobId]);
     if (job.stage === 'active') {
-      const t = await usersWithPermission(c, 'jobs.assign_driver', actor.id);
+      const t = await usersWithPermission(c, 'jobs.assign_driver', actor.id, jobId);
       await notify(c, t.map((u) => u.id), 'job.updated', `Request details changed on ${job.job_number}`, jobId);
     }
   });

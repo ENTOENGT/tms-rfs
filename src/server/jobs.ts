@@ -11,6 +11,7 @@ import { PoolClient } from 'pg';
 import { Actor } from './auth';
 import { ApiError, audit, bad, Db, forbidden, getSetting, notFound, one, q, tx } from './db';
 import { allowedTransitions } from './transitions';
+import { jobScope } from './scope';
 import { fromFils, summariseCommercial, summariseCost, summariseProfit, toFils } from '../lib/finance';
 
 // ---------------------------------------------------------------- read
@@ -28,6 +29,7 @@ const BASE_SELECT = `
   t.temperature_requirement, t.special_handling, t.special_instructions,
   t.pod_status, ps.name pod_status_name, t.cancel_reason, t.cancelled_at, t.completed_at,
   t.requested_by, ru.full_name requested_by_name, t.created_at, t.updated_at,
+  t.department_id, dep.name department_name,
   a.driver_id, dr.full_name driver_name, dr.mobile driver_mobile,
   a.vehicle_id, ve.vehicle_number, a.vehicle_type_id assigned_vehicle_type_id, avt.name assigned_vehicle_type,
   a.planned_pickup_at, a.planned_delivery_at, a.actual_pickup_at, a.actual_delivery_at,
@@ -39,6 +41,7 @@ const BASE_FROM = `
   join job_statuses s on s.code = t.status_code
   join pod_statuses ps on ps.code = t.pod_status
   join users ru on ru.id = t.requested_by
+  left join departments dep on dep.id = t.department_id
   left join vehicle_types rvt on rvt.id = t.requested_vehicle_type_id
   left join transport_assignments a on a.job_id = t.id and a.is_current
   left join drivers dr on dr.id = a.driver_id
@@ -73,16 +76,12 @@ export function toJobDTO(row: any, actor: Actor) {
   return { ...pick(row, JOB_FIELDS), financials: financialBlock(row, actor) };
 }
 
-function scope(actor: Actor, params: unknown[]) {
-  if (actor.has('jobs.view_all')) return '';
-  params.push(actor.id);
-  return ` and t.requested_by = $${params.length}`;
-}
+const scope = (actor: Actor, params: unknown[]) => jobScope(actor, params);
 
 export interface JobListQuery {
   q?: string; status?: string; customer_id?: string; date_from?: string; date_to?: string;
   boe?: string; job_number?: string; pod_status?: string; vehicle_type_id?: string;
-  driver_id?: string; vehicle_id?: string; requested_by?: string; action_required?: string;
+  driver_id?: string; vehicle_id?: string; requested_by?: string; action_required?: string; department_id?: string;
   revenue_min?: string; revenue_max?: string; profit_min?: string; profit_max?: string;
   sort?: string; dir?: string; page?: string; page_size?: string;
 }
@@ -123,6 +122,7 @@ export async function listJobs(actor: Actor, f: JobListQuery) {
   if (f.driver_id) where += ` and a.driver_id = ${add(f.driver_id)}`;
   if (f.vehicle_id) where += ` and a.vehicle_id = ${add(f.vehicle_id)}`;
   if (f.requested_by) where += ` and t.requested_by = ${add(f.requested_by)}`;
+  if (f.department_id) where += ` and t.department_id = ${add(f.department_id)}`;
   if (f.action_required === 'pod') where += ` and s.stage = 'delivered' and t.pod_status in ('pending','rejected')`;
   if (f.revenue_min) where += ` and (rev.gross - coalesce(jc.discount,0)) >= ${add(f.revenue_min)}`;
   if (f.revenue_max) where += ` and (rev.gross - coalesce(jc.discount,0)) <= ${add(f.revenue_max)}`;
@@ -252,14 +252,22 @@ async function locationSnapshot(db: Db, prefix: 'pickup' | 'delivery', b: any) {
     longitude: n(b[`${prefix}_longitude`], 'Longitude') };
 }
 
-export async function usersWithPermission(db: Db, perm: string, excludeId?: string) {
+/**
+ * Active users (not Super Admins, to avoid flooding them) who have `perm`.
+ * Pass `jobId` to keep only people who can actually see that job — so a Sea-Import
+ * job never notifies the E-Com team.
+ */
+export async function usersWithPermission(db: Db, perm: string, excludeId?: string, jobId?: string) {
   return q<{ id: string }>(
     `select u.id from users u join roles r on r.id = u.role_id
       where u.is_active and u.deleted_at is null and r.code <> 'super_admin' and u.id is distinct from $2
-        and ((exists (select 1 from role_permissions rp where rp.role_id = r.id and rp.permission_code = $1)
-              and not exists (select 1 from user_permission_overrides o where o.user_id = u.id and o.permission_code = $1 and not o.granted))
-             or exists (select 1 from user_permission_overrides o where o.user_id = u.id and o.permission_code = $1 and o.granted))`,
-    [perm, excludeId ?? null], db);
+        and user_has_perm(u.id, $1)
+        and ($3::uuid is null
+             or user_has_perm(u.id, 'jobs.view_all')
+             or u.id = (select requested_by from transport_requests where id = $3)
+             or (user_has_perm(u.id, 'jobs.view_department')
+                 and u.department_id = (select department_id from transport_requests where id = $3)))`,
+    [perm, excludeId ?? null, jobId ?? null], db);
 }
 async function notify(db: Db, userIds: string[], type: string, title: string, jobId: string) {
   // Titles come from fixed templates with the job number only — never amounts.
@@ -303,7 +311,15 @@ export async function createJob(actor: Actor, b: any) {
     const de = await locationSnapshot(c, 'delivery', b);
     const prefix = await getSetting<string>('job_number_prefix', 'JOB-', c);
     const vatRate = await getSetting<number>('vat_rate', 5, c);
-    const dept = await one('select department_id from users where id = $1', [actor.id], c);
+    // The job belongs to an operations department. Operations staff: their own department.
+    // Anyone else allowed to create (e.g. Super Admin): must pick one.
+    let deptId: string | null = actor.department_side === 'operations' ? actor.department_id : null;
+    if (!deptId) {
+      const d = b.department_id && /^[0-9a-f-]{36}$/i.test(b.department_id)
+        ? await one(`select id from departments where id = $1 and side = 'operations' and is_active`, [b.department_id], c) : null;
+      if (!d) throw bad('Choose which department this request is for');
+      deptId = d.id;
+    }
 
     const job = await one<{ id: string; job_number: string }>(
       `insert into transport_requests (job_number, status_code, priority, required_date, slot_from, slot_to,
@@ -316,7 +332,7 @@ export async function createJob(actor: Actor, b: any) {
                $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
        returning id, job_number`,
       [prefix, b.save_as_draft ? 'draft' : 'pending_assignment', priority, b.required_date, b.slot_from || null, b.slot_to || null,
-       dept?.department_id ?? null, actor.id, b.customer_id, s(b.customer_reference, 120), s(b.email_subject, 300), boe,
+       deptId, actor.id, b.customer_id, s(b.customer_reference, 120), s(b.email_subject, 300), boe,
        s(b.shipment_number, 60), s(b.booking_reference, 60), b.requested_vehicle_type_id || null,
        pu.id, pu.name, pu.address, pu.contact_person, pu.contact_number, pu.latitude, pu.longitude,
        de.id, de.name, de.address, de.contact_person, de.contact_number, de.latitude, de.longitude,
@@ -338,7 +354,7 @@ export async function createJob(actor: Actor, b: any) {
     }
     await c.query('select refresh_job_search($1)', [job.id]);
     if (!b.save_as_draft) {
-      const transport = await usersWithPermission(c, 'jobs.assign_driver', actor.id);
+      const transport = await usersWithPermission(c, 'jobs.assign_driver', actor.id, job.id);
       await notify(c, transport.map((u) => u.id), 'job.created', `New transport request ${job.job_number}`, job.id);
     }
     return job;

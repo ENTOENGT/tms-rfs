@@ -12,11 +12,12 @@ import { Actor } from './auth';
 import { ApiError, audit, bad, forbidden, getSetting, pool, q } from './db';
 import { financials } from './financials';
 import { fromFils, toFils } from '../lib/finance';
+import { jobScope } from './scope';
 
 type ColType = 'text' | 'date' | 'datetime' | 'money' | 'int' | 'pct';
 type Need = 'cost' | 'revenue' | 'profit';
 interface Col { key: string; label: string; type: ColType; needs?: Need; width?: number; sort?: string }
-interface ReportDef { key: string; title: string; description: string; costDescription?: string; kind: 'jobs' | 'group'; cols: Col[]; group?: 'by_driver' | 'by_vehicle' | 'by_customer'; podPending?: boolean; needsAny?: Need[] }
+interface ReportDef { key: string; title: string; description: string; costDescription?: string; kind: 'jobs' | 'group'; cols: Col[]; group?: 'by_driver' | 'by_vehicle' | 'by_customer' | 'by_department'; podPending?: boolean; needsAny?: Need[] }
 
 const JOB_BASE: Col[] = [
   { key: 'job_number', label: 'Job number', type: 'text', width: 13, sort: 't.job_number' },
@@ -27,6 +28,7 @@ export const REPORTS: Record<string, ReportDef> = {
     key: 'operational', title: 'Operational report', kind: 'jobs',
     description: 'Every job with route, vehicle, driver, status and POD.',
     cols: [...JOB_BASE,
+      { key: 'department_name', label: 'Department', type: 'text', width: 16, sort: 'dep.name' },
       { key: 'slot', label: 'Time slot', type: 'text', width: 12 },
       { key: 'customer_name', label: 'Customer', type: 'text', width: 24, sort: 'c.name' },
       { key: 'boe_number', label: 'BOE', type: 'text', width: 14, sort: 't.boe_number' },
@@ -44,6 +46,7 @@ export const REPORTS: Record<string, ReportDef> = {
     description: 'Revenue, cost and profit per job. Transport users get a cost-only version.',
     costDescription: 'Transport cost per job.',
     cols: [...JOB_BASE,
+      { key: 'department_name', label: 'Department', type: 'text', width: 16, sort: 'dep.name' },
       { key: 'customer_name', label: 'Customer', type: 'text', width: 24, sort: 'c.name' },
       { key: 'status_name', label: 'Status', type: 'text', width: 16, sort: 's.sort_order' },
       { key: 'net_revenue', label: 'Revenue (ex VAT)', type: 'money', needs: 'revenue', width: 15, sort: 'net' },
@@ -52,6 +55,7 @@ export const REPORTS: Record<string, ReportDef> = {
       { key: 'gross_profit', label: 'Profit', type: 'money', needs: 'profit', width: 13, sort: 'profit' },
       { key: 'margin_pct', label: 'Margin %', type: 'pct', needs: 'profit', width: 10 }],
   },
+  department: groupReport('department', 'Department report', 'by_department', 'Department', 'Jobs, revenue, cost and profit per department.'),
   driver: groupReport('driver', 'Driver report', 'by_driver', 'Driver', 'Jobs, revenue, cost and profit per driver.'),
   vehicle: groupReport('vehicle', 'Vehicle report', 'by_vehicle', 'Vehicle', 'Jobs, revenue, cost and profit per vehicle.'),
   customer: groupReport('customer', 'Customer report', 'by_customer', 'Customer', 'Jobs, revenue, cost and profit per customer.'),
@@ -68,7 +72,7 @@ export const REPORTS: Record<string, ReportDef> = {
       { key: 'rejection_reason', label: 'Rejection reason', type: 'text', width: 28 }],
   },
 };
-function groupReport(key: string, title: string, group: 'by_driver' | 'by_vehicle' | 'by_customer', label: string, description: string): ReportDef {
+function groupReport(key: string, title: string, group: 'by_driver' | 'by_vehicle' | 'by_customer' | 'by_department', label: string, description: string): ReportDef {
   return { key, title, description, kind: 'group', group, needsAny: ['cost', 'revenue'],
     costDescription: `Jobs and transport cost per ${label.toLowerCase()}.`, cols: [
     { key: 'label', label, type: 'text', width: 26 },
@@ -109,7 +113,7 @@ export async function runReport(actor: Actor, key: string, p: Record<string, str
 
   if (!def.podPending && (!DATE.test(p.from ?? '') || !DATE.test(p.to ?? ''))) throw bad('Choose a period');
   if (p.from && p.to && p.to < p.from) throw bad('The end date is before the start date');
-  const FILTER_KEYS = ['from', 'to', 'q', 'customer_id', 'driver_id', 'vehicle_id', 'status'];
+  const FILTER_KEYS = ['from', 'to', 'q', 'department_id', 'customer_id', 'driver_id', 'vehicle_id', 'status'];
   const filters = Object.fromEntries(Object.entries(p).filter(([k, v]) => v && FILTER_KEYS.includes(k)));
 
   if (def.kind === 'group') {
@@ -136,8 +140,8 @@ export async function runReport(actor: Actor, key: string, p: Record<string, str
   else where += key === 'financial' ? ` and t.status_code not in ('draft','cancelled')` : '';
   if (p.from) where += ` and t.required_date >= ${add(p.from)}`;
   if (p.to) where += ` and t.required_date <= ${add(p.to)}`;
-  if (!actor.has('jobs.view_all')) where += ` and t.requested_by = ${add(actor.id)}`;
-  for (const [k, col] of Object.entries({ customer_id: 't.customer_id', driver_id: 'a.driver_id', vehicle_id: 'a.vehicle_id' }))
+  where += jobScope(actor, params);
+  for (const [k, col] of Object.entries({ department_id: 't.department_id', customer_id: 't.customer_id', driver_id: 'a.driver_id', vehicle_id: 'a.vehicle_id' }))
     if (p[k]) { if (!UUID.test(p[k])) throw bad('Invalid filter'); where += ` and ${col} = ${add(p[k])}`; }
   if (p.status) where += ` and t.status_code = any(${add(p.status.split(','))})`;
   if (p.q?.trim()) where += ` and t.search_text like ${add('%' + p.q.trim().toLowerCase().replace(/[%_\\]/g, '\\$&') + '%')}`;
@@ -150,7 +154,7 @@ export async function runReport(actor: Actor, key: string, p: Record<string, str
 
   const rows = await q(`select t.job_number, t.required_date, t.slot_from, t.slot_to, c.name customer_name, t.boe_number,
       t.pickup_name, t.delivery_name, vt.name vehicle_type, ve.vehicle_number, dr.full_name driver_name,
-      s.name status_name, ps.name pod_status_name, a.actual_delivery_at, jp.rejection_reason,
+      s.name status_name, ps.name pod_status_name, dep.name department_name, a.actual_delivery_at, jp.rejection_reason,
       floor(extract(epoch from (now() - a.actual_delivery_at)) / 86400)::int days_waiting
       ${needCost ? ', cost.total_cost' : ''}
       ${needRev ? ', (rev.gross - coalesce(jc.discount,0)) net, round((rev.gross - coalesce(jc.discount,0)) * coalesce(jc.vat_rate,0) / 100, 2) vat' : ''}
@@ -160,6 +164,7 @@ export async function runReport(actor: Actor, key: string, p: Record<string, str
     join customers c on c.id = t.customer_id
     join job_statuses s on s.code = t.status_code
     join pod_statuses ps on ps.code = t.pod_status
+    left join departments dep on dep.id = t.department_id
     left join transport_assignments a on a.job_id = t.id and a.is_current
     left join drivers dr on dr.id = a.driver_id
     left join vehicles ve on ve.id = a.vehicle_id

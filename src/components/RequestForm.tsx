@@ -29,7 +29,7 @@ function LocationFields({ p, f, set, lk }: { p: 'pickup' | 'delivery'; f: any; s
 export default function RequestForm({ job }: { job?: any }) {
   const { me, can, lk } = useMe();
   const router = useRouter();
-  const EDIT_KEYS = ['required_date', 'slot_from', 'slot_to', 'priority', 'customer_id', 'customer_reference', 'email_subject', 'boe_number',
+  const EDIT_KEYS = ['department_id', 'required_date', 'slot_from', 'slot_to', 'priority', 'customer_id', 'customer_reference', 'email_subject', 'boe_number',
     'shipment_number', 'booking_reference', 'requested_vehicle_type_id', 'pickup_name', 'pickup_address', 'pickup_contact_person',
     'pickup_contact_number', 'delivery_name', 'delivery_address', 'delivery_contact_person', 'delivery_contact_number', 'cargo_description',
     'cargo_type', 'packages', 'weight_kg', 'volume_cbm', 'pallets', 'temperature_requirement', 'special_handling', 'special_instructions'];
@@ -75,6 +75,20 @@ export default function RequestForm({ job }: { job?: any }) {
         <div>
           <div className="panel">
             <h2>Job</h2>
+            {(() => {
+              // Operations staff: the request belongs to their own department.
+              // Super Admin (or anyone outside Operations): choose the department.
+              const own = lk.my_department?.side === 'operations' ? lk.my_department : null;
+              const canChoose = !own && (!job || me.role_code === 'super_admin');
+              const opsDepts = lk.departments.filter((d: any) => d.side === 'operations');
+              if (canChoose) return (
+                <label className="f" style={{ marginBottom: 12, maxWidth: 320 }}><span>Department <em>*</em></span>
+                  <select value={f.department_id ?? ''} onChange={set('department_id')}>
+                    <option value="">Choose department</option>
+                    {opsDepts.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>);
+              const name = job?.department_name ?? own?.name;
+              return name ? <p className="muted small" style={{ marginTop: -6 }}>Department: <b>{name}</b></p> : null;
+            })()}
             <div className="grid g3">
               <label className="f"><span>Required date <em>*</em></span><input type="date" value={f.required_date ?? ''} onChange={set('required_date')} /></label>
               <label className="f"><span>Time slot from</span><input type="time" value={f.slot_from ?? ''} onChange={set('slot_from')} /></label>

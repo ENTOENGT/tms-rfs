@@ -5,10 +5,11 @@ import { useMe } from '@/components/Shell';
 import { BarList, COLORS, MonthChart } from '@/components/Charts';
 import { period, PERIODS } from '@/lib/period';
 
-const TABS: [string, string][] = [['by_customer', 'Customer'], ['by_driver', 'Driver'], ['by_vehicle', 'Vehicle'], ['by_vehicle_type', 'Vehicle type']];
+const ALL_TABS: [string, string][] = [['by_department', 'Department'], ['by_customer', 'Customer'], ['by_driver', 'Driver'], ['by_vehicle', 'Vehicle'], ['by_vehicle_type', 'Vehicle type']];
 
 export default function Financials() {
-  const { me, lk } = useMe();
+  const { me, lk, can } = useMe();
+  const TABS = ALL_TABS.filter(([k]) => k !== 'by_department' || can('jobs.view_all'));
   const fa = me.financial_access;
   const [key, setKey] = useState('this_month');
   const [custom, setCustom] = useState<[string, string]>(['', '']);
@@ -16,7 +17,7 @@ export default function Financials() {
   const [showFilters, setShowFilters] = useState(false);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState('');
-  const [tab, setTab] = useState('by_customer');
+  const [tab, setTab] = useState(can('jobs.view_all') ? 'by_department' : 'by_customer');
   const [from, to] = key === 'custom' ? custom : period(key, lk.timezone);
   const cur = lk.currency;
 
@@ -74,6 +75,8 @@ export default function Financials() {
 
       {showFilters && <div className="panel" style={{ marginBottom: 12 }}>
         <div className="grid g4">
+          {can('jobs.view_all') && <label className="f"><span>Department</span><select value={f.department_id ?? ''} onChange={set('department_id')}><option value="">All</option>
+            {lk.departments.filter((d: any) => d.side === 'operations').map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
           <label className="f"><span>Customer</span><select value={f.customer_id ?? ''} onChange={set('customer_id')}><option value="">All</option>
             {lk.customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
           <label className="f"><span>Driver</span><select value={f.driver_id ?? ''} onChange={set('driver_id')}><option value="">All</option>

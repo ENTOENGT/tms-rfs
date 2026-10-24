@@ -24,10 +24,10 @@ const NAV: { href: string; label: string; perm?: string | string[]; phase?: numb
   { href: '/reports', label: 'Reports', perm: 'reports.view' },
   { href: '/documents', label: 'Documents', perm: 'jobs.view' },
 ];
-const ADMIN: { href: string; label: string; perm: string; phase?: number }[] = [
-  { href: '/users', label: 'Users', perm: 'users.manage' },
-  { href: '/roles', label: 'Roles & permissions', perm: 'roles.manage' },
-  { href: '/settings', label: 'Settings', perm: 'settings.manage' },
+const ADMIN: { href: string; label: string; perm: string[]; phase?: number }[] = [
+  { href: '/users', label: 'Users', perm: ['users.manage', 'users.manage_department'] },
+  { href: '/roles', label: 'Roles & permissions', perm: ['roles.manage', 'roles.manage_department'] },
+  { href: '/settings', label: 'Settings', perm: ['settings.manage'] },
 ];
 
 function Bell() {
@@ -75,7 +75,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {i.label}{i.phase && <span className="soon">Phase {i.phase}</span>}
     </Link>
   );
-  const adminLinks = ADMIN.filter((i) => can(i.perm));
+  const adminLinks = ADMIN.filter((i) => i.perm.some(can));
   return (
     <MeCtx.Provider value={{ me, can, lk, reloadLookups: () => api('/api/lookups').then(setLk) }}>
       <div className="shell">

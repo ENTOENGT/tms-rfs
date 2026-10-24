@@ -1,7 +1,7 @@
 // Shared by server and UI. The UI uses these only to hide buttons —
 // the server is the authority and never sends what a user may not see.
 export type Perm =
-  | 'jobs.view' | 'jobs.view_all' | 'jobs.create' | 'jobs.edit' | 'jobs.edit_assigned'
+  | 'jobs.view' | 'jobs.view_all' | 'jobs.view_department' | 'jobs.create' | 'jobs.edit' | 'jobs.edit_assigned'
   | 'jobs.edit_completed' | 'jobs.delete' | 'jobs.cancel' | 'jobs.backdate'
   | 'jobs.assign_driver' | 'jobs.assign_vehicle' | 'jobs.override_conflicts' | 'jobs.update_status'
   | 'pod.upload' | 'pod.verify' | 'documents.upload' | 'documents.view_commercial'
@@ -9,7 +9,10 @@ export type Perm =
   | 'finance.selling.edit' | 'finance.profit.view'
   | 'reports.view' | 'reports.export'
   | 'drivers.manage' | 'vehicles.manage' | 'customers.manage' | 'locations.manage'
-  | 'users.manage' | 'roles.manage' | 'settings.manage' | 'audit.view';
+  | 'users.manage' | 'roles.manage' | 'settings.manage' | 'audit.view'
+  | 'users.manage_department' | 'roles.manage_department';
+
+export type Side = 'admin' | 'operations' | 'transport' | 'messenger' | 'finance';
 
 export interface FinancialAccess {
   buyingView: boolean; buyingEdit: boolean;

@@ -15,6 +15,46 @@ const FIELDS: [string, string, string, string?][] = [
 ];
 const STAGE: Record<string, string> = { draft: 'Draft', open: 'Waiting', active: 'In progress', delivered: 'Delivered', closed: 'Closed', cancelled: 'Cancelled' };
 
+const SIDE_NAMES: Record<string, string> = { admin: 'Administration', operations: 'Operations', transport: 'Transport', messenger: 'Messengers', finance: 'Finance' };
+function Departments() {
+  const { reloadLookups } = useMe();
+  const [rows, setRows] = useState<any[]>([]);
+  const [edit, setEdit] = useState<any>(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { api('/api/settings/departments').then(setRows).catch((e) => setErr(e.message)); }, []);
+  const save = async (body: any) => {
+    try { setRows(await api('/api/settings/departments', { body })); setEdit(null); setErr(''); reloadLookups(); }
+    catch (e: any) { setErr(e.message); }
+  };
+  return (
+    <div className="panel">
+      <div className="page-head" style={{ marginBottom: 8 }}><h2 style={{ margin: 0 }}>Departments</h2><span className="spacer" />
+        <button className="btn" onClick={() => setEdit({ name: '', side: 'operations' })}>Add department</button></div>
+      <p className="muted small" style={{ marginTop: 0 }}>Each department belongs to a side. Operations departments see only their own jobs; Transport sees jobs from every department.</p>
+      {err && <div className="msg err">{err}</div>}
+      <div className="table-wrap"><table className="t">
+        <thead><tr><th>Department</th><th>Side</th><th className="num">Active users</th><th>Status</th><th /></tr></thead>
+        <tbody>{rows.map((d) => <tr key={d.id} style={d.is_active ? undefined : { opacity: 0.55 }}>
+          <td><b>{d.name}</b></td><td>{SIDE_NAMES[d.side]}</td><td className="num">{d.users}</td><td>{d.is_active ? 'Active' : 'Switched off'}</td>
+          <td style={{ textAlign: 'right' }}><button className="btn small" onClick={() => setEdit({ ...d })}>Edit</button></td></tr>)}</tbody>
+      </table></div>
+      {edit && <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setEdit(null)}>
+        <div className="modal" role="dialog" aria-label="Department">
+          <h2>{edit.id ? `Edit ${edit.name}` : 'Add department'}</h2>
+          <div className="grid g2">
+            <label className="f"><span>Name</span><input autoFocus value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></label>
+            <label className="f"><span>Side</span><select value={edit.side} disabled={edit.code === 'admin'} onChange={(e) => setEdit({ ...edit, side: e.target.value })}>
+              {Object.entries(SIDE_NAMES).filter(([k]) => k !== 'admin' || edit.code === 'admin').map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+            {edit.id && edit.code !== 'admin' && <label className="f"><span>Active</span>
+              <input type="checkbox" style={{ width: 'auto' }} checked={edit.is_active} onChange={(e) => setEdit({ ...edit, is_active: e.target.checked })} /></label>}
+          </div>
+          <div className="actions"><button className="btn" onClick={() => setEdit(null)}>Cancel</button>
+            <button className="btn primary" disabled={!edit.name.trim()} onClick={() => save(edit)}>Save</button></div>
+        </div></div>}
+    </div>
+  );
+}
+
 function StorageCheck() {
   const [r, setR] = useState<any>(null);
   const [busy, setBusy] = useState(false);
@@ -77,6 +117,8 @@ export default function Settings() {
             </tr>))}</tbody>
         </table></div>
       </div>
+
+      <Departments />
 
       <StorageCheck />
 
