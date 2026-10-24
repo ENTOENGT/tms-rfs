@@ -171,6 +171,12 @@ export async function assignJob(actor: Actor, jobId: string, b: any) {
     await c.query('select refresh_job_search($1)', [jobId]);
     await notify(c, [job.requested_by !== actor.id ? job.requested_by : null], 'job.assigned',
       cur ? `Assignment changed on ${job.job_number}` : `Driver and vehicle assigned to ${job.job_number}`, jobId);
+    // Drivers on the phone app hear about their own jobs
+    const appUser = async (id: string | null) => id ? (await one('select user_id from drivers where id = $1', [id], c))?.user_id ?? null : null;
+    const newDrv = await appUser(driverId), oldDrv = await appUser(cur?.driver_id ?? null);
+    if (newDrv && newDrv !== oldDrv) await notify(c, [newDrv], 'job.driver_assigned', `New job for you: ${job.job_number}`, jobId);
+    else if (newDrv) await notify(c, [newDrv], 'job.driver_changed', `Your job ${job.job_number} was updated`, jobId);
+    if (oldDrv && oldDrv !== newDrv) await notify(c, [oldDrv], 'job.driver_removed', `${job.job_number} was given to another driver`, jobId);
     return { ok: true, warnings: warnings.map((w) => w.message) };
   }).then(() => getJob(actor, jobId));
 }

@@ -1,7 +1,7 @@
 // Shared by server and UI. The UI uses these only to hide buttons —
 // the server is the authority and never sends what a user may not see.
 export type Perm =
-  | 'jobs.view' | 'jobs.view_all' | 'jobs.view_department' | 'jobs.create' | 'jobs.edit' | 'jobs.edit_assigned'
+  | 'jobs.view' | 'jobs.view_all' | 'jobs.view_department' | 'jobs.view_assigned' | 'jobs.create' | 'jobs.edit' | 'jobs.edit_assigned'
   | 'jobs.edit_completed' | 'jobs.delete' | 'jobs.cancel' | 'jobs.backdate'
   | 'jobs.assign_driver' | 'jobs.assign_vehicle' | 'jobs.override_conflicts' | 'jobs.update_status'
   | 'pod.upload' | 'pod.verify' | 'documents.upload' | 'documents.view_commercial'

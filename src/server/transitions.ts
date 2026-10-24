@@ -1,5 +1,9 @@
 import { Actor } from './auth';
 import { q } from './db';
+import { isDriverOnly } from './scope';
+
+/** The only steps a driver can take from the phone. */
+export const DRIVER_STEPS = ['dispatched', 'picked_up', 'in_transit', 'delivered'];
 
 export async function allowedTransitions(actor: Actor, job: { status_code: string; pod_status?: string }) {
   const rows = await q(`select tr.to_code code, s.name, s.stage from status_transitions tr join job_statuses s on s.code = tr.to_code
@@ -16,6 +20,7 @@ export async function allowedTransitions(actor: Actor, job: { status_code: strin
 }
 export function canMove(actor: Actor, from: string, to: string, toStage: string) {
   if (actor.isSuperAdmin) return true;
+  if (isDriverOnly(actor)) return DRIVER_STEPS.includes(to) && actor.has('jobs.update_status');
   if (to === 'cancelled') return actor.has('jobs.cancel');
   if (from === 'draft' && to === 'pending_assignment') return actor.has('jobs.create');
   if (to === 'pending_assignment') return actor.has('jobs.assign_driver') || actor.has('jobs.assign_vehicle');

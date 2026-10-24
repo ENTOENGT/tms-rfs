@@ -12,7 +12,7 @@
  *  - creates and edits roles for their own department only, under the same limit
  */
 import { randomBytes } from 'crypto';
-import { Actor, hashPassword, validatePassword } from './auth';
+import { Actor, hashPassword, phoneKey, validatePassword } from './auth';
 import { ApiError, audit, bad, forbidden, notFound, one, pool, q, tx } from './db';
 import type { Side } from '../lib/permissions';
 
@@ -29,7 +29,7 @@ function scopeFor(actor: Actor, full: 'users.manage' | 'roles.manage', dept: 'us
     return { all: false, deptId: actor.department_id, deptName: actor.department_name!, side: actor.department_side };
   throw forbidden();
 }
-const userScope = (a: Actor) => scopeFor(a, 'users.manage', 'users.manage_department');
+export const userScope = (a: Actor) => scopeFor(a, 'users.manage', 'users.manage_department');
 const roleScope = (a: Actor) => scopeFor(a, 'roles.manage', 'roles.manage_department');
 
 /** Permissions this person may hand out to others. */
@@ -40,16 +40,16 @@ async function grantable(actor: Actor, scope: Scope) {
 }
 
 async function assignableRoles(scope: Scope) {
-  if (scope.all) return q(`select r.id, r.code, r.name, r.side, r.department_id, r.is_manager from roles r
+  if (scope.all) return q(`select r.id, r.code, r.name, r.side, r.department_id, r.is_manager, r.app_only from roles r
     order by r.is_manager desc, r.name`);
-  return q(`select r.id, r.code, r.name, r.side, r.department_id, r.is_manager from roles r
+  return q(`select r.id, r.code, r.name, r.side, r.department_id, r.is_manager, r.app_only from roles r
     where r.code <> 'super_admin' and not r.is_manager
       and (r.department_id = $1 or (r.department_id is null and r.side = $2)) order by r.name`, [scope.deptId, scope.side]);
 }
 
 async function checkRoleFits(roleId: unknown, deptId: unknown, scope: Scope, db = pool() as any) {
   if (typeof roleId !== 'string' || !UUID.test(roleId)) throw bad('Choose a role');
-  const role = await one('select id, code, name, side, department_id, is_manager from roles where id = $1', [roleId], db);
+  const role = await one('select id, code, name, side, department_id, is_manager, app_only from roles where id = $1', [roleId], db);
   if (!role) throw bad('Choose a role');
   if (!scope.all) {
     const ok = (await assignableRoles(scope)).some((r: any) => r.id === role.id);
@@ -78,7 +78,7 @@ export async function listUsers(actor: Actor) {
   let where = 'where u.deleted_at is null';
   if (!scope.all) { params.push(scope.deptId); where += ' and u.department_id = $1'; }
   const users = await q(`select u.id, u.full_name, u.email, u.mobile, u.is_active, u.must_change_password, u.last_login_at, u.created_at,
-      r.id role_id, r.code role_code, r.name role_name, r.is_manager, d.id department_id, d.name department_name, d.side department_side
+      r.id role_id, r.code role_code, r.name role_name, r.is_manager, r.app_only, d.id department_id, d.name department_name, d.side department_side
     from users u join roles r on r.id = u.role_id left join departments d on d.id = u.department_id
     ${where} order by d.name nulls first, r.is_manager desc, u.full_name`, params);
   const perms = await grantable(actor, scope);
@@ -101,12 +101,19 @@ export async function listUsers(actor: Actor) {
 
 export async function createUser(actor: Actor, b: any) {
   const scope = userScope(actor);
-  const email = String(b.email ?? '').trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw bad('Enter a valid email address');
   const name = String(b.full_name ?? '').trim();
   if (!name) throw bad('Name is required');
   const deptId = scope.all ? b.department_id : scope.deptId;      // managers always add to their own department
   const { role, dept } = await checkRoleFits(b.role_id, deptId, scope);
+  let email = String(b.email ?? '').trim().toLowerCase();
+  // Phone-app people (messengers, drivers) may have no email: they sign in with their mobile number.
+  if (!email && role.app_only) {
+    if (phoneKey(b.mobile).length < 9) throw bad('Enter a mobile number — they sign in to the phone app with it');
+    if (await one(`select 1 from users where deleted_at is null and right(regexp_replace(coalesce(mobile, ''), '\\D', '', 'g'), 9) = $1`, [phoneKey(b.mobile)]))
+      throw new ApiError(409, 'MOBILE_TAKEN', 'Another user already has this mobile number');
+    email = `app.${randomBytes(5).toString('hex')}@users.app`;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw bad('Enter a valid email address');
   if (role.code === 'super_admin' && !actor.isSuperAdmin) throw forbidden('Only a Super Admin can create another Super Admin');
   const password = b.password ? validatePassword(b.password) : tempPassword();
   if (await one('select 1 from users where lower(email) = $1 and deleted_at is null', [email]))
@@ -121,7 +128,7 @@ export async function createUser(actor: Actor, b: any) {
   });
 }
 
-async function editableUser(actor: Actor, scope: Scope, id: string, db?: any) {
+export async function editableUser(actor: Actor, scope: Scope, id: string, db?: any) {
   if (!UUID.test(id)) throw notFound('User');
   const cur = await one(`select u.*, r.code role_code, r.is_manager from users u join roles r on r.id = u.role_id
     where u.id = $1 and u.deleted_at is null`, [id], db);

@@ -15,7 +15,7 @@ import { Actor, requirePerm } from './auth';
 import { ApiError, audit, bad, Db, forbidden, getSetting, notFound, one, q, tx } from './db';
 import { getJob, usersWithPermission } from './jobs';
 import { fileStore } from './storage';
-import { jobScope } from './scope';
+import { canViewJobs, jobScope } from './scope';
 
 const UUID = /^[0-9a-f-]{36}$/i;
 export const MAX_BYTES = 10 * 1024 * 1024;
@@ -35,7 +35,7 @@ async function notify(db: Db, userIds: (string | null | undefined)[], type: stri
 
 async function visibleJob(actor: Actor, jobId: string, db?: Db, lock = false) {
   if (!UUID.test(jobId)) throw notFound('Job');
-  if (!actor.has('jobs.view')) throw forbidden();
+  if (!canViewJobs(actor)) throw forbidden();
   const p: unknown[] = [jobId];
   const scope = jobScope(actor, p);
   const job = await one(`select t.id, t.job_number, t.status_code, t.pod_status, t.requested_by, s.stage, s.name status_name

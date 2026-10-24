@@ -11,7 +11,7 @@ import { PoolClient } from 'pg';
 import { Actor } from './auth';
 import { ApiError, audit, bad, Db, forbidden, getSetting, notFound, one, q, tx } from './db';
 import { allowedTransitions } from './transitions';
-import { jobScope } from './scope';
+import { canViewJobs, jobScope } from './scope';
 import { fromFils, summariseCommercial, summariseCost, summariseProfit, toFils } from '../lib/finance';
 
 // ---------------------------------------------------------------- read
@@ -96,7 +96,7 @@ const SORTS: Record<string, { sql: string; needs?: 'buying' | 'selling' | 'profi
 };
 
 export async function listJobs(actor: Actor, f: JobListQuery) {
-  if (!actor.has('jobs.view')) throw forbidden();
+  if (!canViewJobs(actor)) throw forbidden();
   const { fin } = actor;
   const hidden = (what: string) => new ApiError(403, 'FORBIDDEN_FILTER', `You can't filter or sort by ${what}`);
   if ((f.revenue_min || f.revenue_max) && !fin.sellingView) throw hidden('revenue');
@@ -147,7 +147,7 @@ export async function listJobs(actor: Actor, f: JobListQuery) {
 }
 
 export async function getJob(actor: Actor, id: string) {
-  if (!actor.has('jobs.view')) throw forbidden();
+  if (!canViewJobs(actor)) throw forbidden();
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound('Job');
   const { fin } = actor;
   const p: unknown[] = [id];

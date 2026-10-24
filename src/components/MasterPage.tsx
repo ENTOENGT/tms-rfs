@@ -1,4 +1,5 @@
 'use client';
+import SendAppLink from './SendAppLink';
 import { useEffect, useState } from 'react';
 import { api, fmtDate } from './api';
 import { useMe } from './Shell';
@@ -71,14 +72,23 @@ function Form({ entity, row, onDone, onClose }: { entity: string; row: any; onDo
   );
 }
 
+const APP_STATE: Record<string, React.ReactNode> = {
+  none: <span className="muted">Not sent</span>, sent: <span className="badge outline">Link sent</span>,
+  expired: <span className="flag">Link expired</span>, active: <span className="badge" style={{ background: '#276749' }}>Using app</span>,
+  off: <span className="badge" style={{ background: '#9B2C2C' }}>Switched off</span>,
+};
+
 export default function MasterPage({ entity, embedded }: { entity: string; embedded?: boolean }) {
   const d = MASTERS[entity];
-  const { can, lk, reloadLookups } = useMe();
+  const { can, lk, reloadLookups, me } = useMe();
   const [q, setQ] = useState('');
   const [data, setData] = useState<any>(null);
   const [edit, setEdit] = useState<any>(null);
   const [msg, setMsg] = useState<{ t: string; m: string } | null>(null);
   const canEdit = can(d.perm);
+  // Drivers get the phone app from the Transport Manager or Super Admin
+  const canSendApp = entity === 'drivers' && (can('users.manage') || (can('users.manage_department') && me.department_side === 'transport'));
+  const [appFor, setAppFor] = useState<any>(null);
   const load = () => api(`/api/masters/${entity}?q=${encodeURIComponent(q)}&page_size=500`).then(setData).catch((e) => setMsg({ t: 'err', m: e.message }));
   useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); }, [q, entity]);
   const remove = async (r: any) => {
@@ -108,14 +118,16 @@ export default function MasterPage({ entity, embedded }: { entity: string; embed
       <p className="muted small" style={{ marginTop: -6 }}>{d.blurb}</p>
       {msg && <div className={`msg ${msg.t}`}>{msg.m}</div>}
       <div className="panel flush"><div className="table-wrap"><table className="t">
-        <thead><tr>{cols.map((x) => <th key={x.key}>{x.label}</th>)}{canEdit && <th />}</tr></thead>
+        <thead><tr>{cols.map((x) => <th key={x.key}>{x.label}</th>)}{canSendApp && <th>Phone app</th>}{(canEdit || canSendApp) && <th />}</tr></thead>
         <tbody>
           {data?.rows.map((r: any) => (
             <tr key={r.id}>
               {cols.map((x, i) => <td key={x.key}>{i === 0 ? <b>{cell(r, x)}</b> : cell(r, x)}</td>)}
-              {canEdit && <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-                <button className="btn small" onClick={() => setEdit(r)}>Edit</button>{' '}
-                <button className="btn small danger" onClick={() => remove(r)}>Remove</button></td>}
+              {canSendApp && <td>{APP_STATE[r.app ?? 'none']}</td>}
+              {(canEdit || canSendApp) && <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                {canSendApp && <><button className="btn small" onClick={() => setAppFor(r)}>Send app link</button>{' '}</>}
+                {canEdit && <><button className="btn small" onClick={() => setEdit(r)}>Edit</button>{' '}
+                <button className="btn small danger" onClick={() => remove(r)}>Remove</button></>}</td>}
             </tr>))}
           {data && data.rows.length === 0 && <tr><td colSpan={cols.length + 1} className="muted" style={{ padding: 24, textAlign: 'center' }}>
             {q ? 'Nothing matches that search.' : `No ${d.title.toLowerCase()} yet.`}{canEdit && !q && <> <a href="#" onClick={(e) => { e.preventDefault(); setEdit({}); }}>Add the first {d.singular}</a>.</>}
@@ -124,6 +136,7 @@ export default function MasterPage({ entity, embedded }: { entity: string; embed
       </table></div>
         <div className="pager"><span>{data ? `${data.total} ${data.total === 1 ? d.singular : d.title.toLowerCase()}` : 'Loading…'}</span></div>
       </div>
+      {appFor && <SendAppLink driverId={appFor.id} name={appFor.full_name} onClose={(ch) => { setAppFor(null); if (ch) load(); }} />}
       {edit && <Form entity={entity} row={edit} onClose={() => setEdit(null)}
         onDone={(m) => { setEdit(null); setMsg({ t: 'ok', m }); load(); reloadLookups(); }} />}
     </div>

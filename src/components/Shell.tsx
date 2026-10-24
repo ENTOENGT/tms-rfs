@@ -6,6 +6,7 @@ import { api, fmtDateTime } from './api';
 
 export interface Me {
   id: string; full_name: string; email: string; role: string; role_code: string; department: string | null;
+  department_side: string | null; app_only: boolean;
   permissions: string[];
   financial_access: { buyingView: boolean; buyingEdit: boolean; sellingView: boolean; sellingEdit: boolean; profitView: boolean };
 }
@@ -31,7 +32,7 @@ const ADMIN: { href: string; label: string; perm: string[]; phase?: number }[] =
   { href: '/settings', label: 'Settings', perm: ['settings.manage'] },
 ];
 
-function Bell() {
+function Bell({ jobHref = (id: string) => `/jobs/${id}` }: { jobHref?: (id: string) => string }) {
   const [n, setN] = useState<{ unread: number; rows: any[] }>({ unread: 0, rows: [] });
   const [open, setOpen] = useState(false);
   const load = () => api('/api/notifications').then(setN).catch(() => {});
@@ -45,7 +46,7 @@ function Bell() {
         <div className="dropdown" onMouseLeave={() => setOpen(false)}>
           {n.rows.length === 0 && <div style={{ padding: 12 }} className="muted">You're all caught up.</div>}
           {n.rows.map((r) => (
-            <Link key={r.id} href={r.run_id ? `/runs/${r.run_id}` : r.job_id ? `/jobs/${r.job_id}` : '#'} className={r.read_at ? '' : 'unread'} onClick={() => setOpen(false)}>
+            <Link key={r.id} href={r.run_id ? `/runs/${r.run_id}` : r.job_id ? jobHref(r.job_id) : '#'} className={r.read_at ? '' : 'unread'} onClick={() => setOpen(false)}>
               {r.title}<div className="muted small">{fmtDateTime(r.created_at)}</div>
             </Link>
           ))}
@@ -68,9 +69,28 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       api('/api/lookups').then(setLk);
     });
   }, []);
-  if (!me || !lk) return <div className="page muted">Loading…</div>;
+  const appHome = me?.app_only ? (me.permissions.includes('jobs.view_assigned') ? '/my-jobs' : '/runs') : null;
+  const appAllowed = !appHome || ['/my-jobs', '/runs', '/change-password'].some((p) => path.startsWith(p));
+  useEffect(() => { if (appHome && !appAllowed) router.replace(appHome); }, [appHome, appAllowed]);
+  if (!me || !lk || !appAllowed) return <div className="page muted">Loading…</div>;
   const can = (p: string) => me.permissions.includes(p);
   const logout = async () => { await api('/api/auth/logout', { body: {} }); location.href = '/login'; };
+  if (appHome) return (
+    // Phone app for drivers and messengers: no sidebar, big touch targets, only their own work.
+    <MeCtx.Provider value={{ me, can, lk, reloadLookups: () => api('/api/lookups').then(setLk) }}>
+      <div className="app-shell">
+        <header className="app-top">
+          <Link href={appHome} className="app-brand"><img src="/brand/mark-on-dark.png" alt="" width={30} height={28} />
+            <span>{appHome === '/my-jobs' ? 'My jobs' : 'My runs'}</span></Link>
+          <span className="spacer" />
+          <Bell jobHref={(id) => `/my-jobs/${id}`} />
+          <button className="btn small" onClick={() => confirm('Sign out of the app?') && logout()}>Sign out</button>
+        </header>
+        <main className="app-main">{children}</main>
+        <footer className="app-foot muted small">{me.full_name} · Reliance Freight Systems</footer>
+      </div>
+    </MeCtx.Provider>
+  );
   const link = (i: { href: string; label: string; phase?: number }) => (
     <Link key={i.href} href={i.href} className={path.startsWith(i.href) ? 'on' : ''}>
       {i.label}{i.phase && <span className="soon">Phase {i.phase}</span>}

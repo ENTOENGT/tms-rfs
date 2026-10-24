@@ -19,6 +19,15 @@ export async function changeOwnPassword(actor: Actor, b: any) {
 
 // ---------------------------------------------------------------- lookups
 export async function lookups(actor: Actor) {
+  // Phone-app people get only what their screens use — not the customer, staff and fleet lists.
+  if (actor.app_only) return {
+    customers: [], locations: [], vehicle_types: [], drivers: [], vehicles: [], users: [],
+    job_statuses: await q('select code, name, color, stage from job_statuses where is_active order by sort_order'),
+    pod_statuses: await q('select code, name from pod_statuses where is_active order by sort_order'),
+    departments: [], my_department: actor.department_id ? { id: actor.department_id, name: actor.department_name, side: actor.department_side } : null,
+    document_types: await q(`select code, name from document_types where is_active and code = 'pod'`),
+    expiry_warning_days: 30, currency: await getSetting('currency', 'AED'), timezone: await getSetting('timezone', 'Asia/Dubai'),
+  };
   const out: Record<string, unknown> = {
     customers: await q('select id, name from customers where is_active and deleted_at is null order by name'),
     locations: await q('select id, name, address, emirate, contact_person, contact_number from locations where is_active and deleted_at is null order by name'),

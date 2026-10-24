@@ -71,8 +71,19 @@ export async function listMaster(actor: Actor, key: string, p: Record<string, st
   const rows = await q(`select ${cols}, count(*) over() _total from ${d.table} e ${d.joins ?? ''} ${where}
     order by ${d.orderBy} limit ${size} offset ${(page - 1) * size}`, params);
   const keep = ['id', ...d.fields.map((f) => f.key), ...Object.values(d.display ?? {})];
-  return { total: Number(rows[0]?._total ?? 0), page, page_size: size,
-    rows: rows.map((r) => Object.fromEntries(keep.map((k) => [k, r[k] ?? null]))) };
+  const out = rows.map((r) => Object.fromEntries(keep.map((k) => [k, r[k] ?? null])));
+  if (key === 'drivers' && out.length) {
+    // Phone app state per driver: none → link sent → using the app
+    const app = await q(`select dr.id, u.is_active, u.last_login_at,
+        exists (select 1 from app_links l where l.user_id = u.id and l.used_at is null and l.expires_at > now()) link_open
+      from drivers dr join users u on u.id = dr.user_id and u.deleted_at is null where dr.id = any($1)`, [out.map((r) => r.id)]);
+    const by = new Map(app.map((a) => [a.id, a]));
+    for (const r of out) {
+      const a = by.get(r.id);
+      r.app = !a ? 'none' : !a.is_active ? 'off' : a.last_login_at ? 'active' : a.link_open ? 'sent' : 'expired';
+    }
+  }
+  return { total: Number(rows[0]?._total ?? 0), page, page_size: size, rows: out };
 }
 
 const dupMessages: Record<string, string> = {
@@ -173,6 +184,9 @@ export async function deleteMaster(actor: Actor, key: string, id: string) {
     if (used!.n) throw new ApiError(409, 'IN_USE', `Can't remove: ${used!.n} vehicle(s) use this type. Mark it inactive instead.`);
   }
   await tx(async (c) => {
+    if (key === 'drivers')      // a removed driver can no longer use the phone app
+      await c.query(`update users set is_active = false, token_version = token_version + 1, updated_at = now()
+        where id = (select user_id from drivers where id = $1)`, [id]);
     const r = d.softDelete
       ? await c.query(`update ${d.table} set deleted_at = now() where id = $1 and deleted_at is null returning id`, [id])
       : await c.query(`delete from ${d.table} where id = $1 returning id`, [id]).catch(() => {
