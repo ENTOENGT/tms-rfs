@@ -290,6 +290,23 @@ both: `/api/documents/{id}/download?view=1` and `/api/run-files/{id}?view=1` red
 signed link that opens in the browser; without `view=1` the link saves the file. Customer invoices stay
 hidden from Transport for viewing exactly as for downloading. `X-Frame-Options` is `SAMEORIGIN`.
 
+### Phone app for drivers and messengers (migration 007)
+
+- **Driver role** (`driver`, transport side, `app_only`): permission `jobs.view_assigned` — `jobScope` shows only jobs
+  whose current assignment is to a driver record linked to this user. A driver can only take the road steps
+  (`DRIVER_STEPS`: dispatched, picked_up, in_transit, delivered) and upload the POD. No masters, dashboard,
+  documents page, or price data; the lookups call returns almost nothing for app users.
+- **App links** (`src/server/applink.ts`, table `app_links`): "Send app link" on the Drivers page (Transport Manager,
+  Super Admin) or the Users page (Messenger Manager, Super Admin — anyone who manages that user). One-time link,
+  7 days, only a hash stored; a new link switches off older ones (also the "forgot password" fix). The driver's
+  login is created on first send and linked via `drivers.user_id`. Message is sent by WhatsApp (wa.me) or copied.
+- `/join/{token}`: choose password → signed in → instructions to add to home screen (Android install button,
+  iPhone Share → Add to Home Screen). PWA manifest `src/app/manifest.ts`, icons in `public/app-icon-*.png`.
+- Sign-in accepts a **mobile number** (last 9 digits match; a number shared by two accounts can't sign in).
+  App users stay signed in 60 days; office users 12 hours.
+- `Shell` shows app users a phone layout (no sidebar): drivers → `/my-jobs`, messengers → `/runs`; other pages redirect.
+- Drivers are told when a job is given to them, changed, or taken away. Removing a driver switches off their login.
+
 ## 16. Phase status
 
 | Phase | Status |
@@ -303,5 +320,5 @@ hidden from Transport for viewing exactly as for downloading. `X-Frame-Options` 
 | Structure stage 1 — departments, managers, department-only visibility | Done |
 | Structure stage 2 — messenger runs (request, assign, collected, delivered with photo) | Done |
 | File viewer — files open on the page, Download is optional | Done |
-| Structure stage 3 — phone app (from a link) for drivers and messengers | Next |
+| Structure stage 3 — phone app (from a link) for drivers and messengers | Done |
 | 7 Email notifications · 8 Saved views, column prefs, live ops table, performance | Planned |
