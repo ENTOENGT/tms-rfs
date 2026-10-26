@@ -307,6 +307,36 @@ hidden from Transport for viewing exactly as for downloading. `X-Frame-Options` 
 - `Shell` shows app users a phone layout (no sidebar): drivers → `/my-jobs`, messengers → `/runs`; other pages redirect.
 - Drivers are told when a job is given to them, changed, or taken away. Removing a driver switches off their login.
 
+### New Transport Request: Job No., delivery contact, trip documents, 30-day deletion (migration 008)
+
+- **Job No.** (`transport_requests.job_no`): typed by Operations, mandatory, kept exactly as typed (trimmed). The old
+  automatic number stays as the **Request No.** (`job_number`, prefix now `TR-`). Existing jobs got their old number as Job No.
+  Same department + same Job No. is blocked (app check + unique index `tr_job_no_dept_uq`; cancelled jobs free it);
+  another department gets a warning (`JOB_NO_OTHER_DEPT`) and may confirm. Shown on lists, job page, dialogs,
+  notifications, reports, trip sheet and the driver app. Search/filter by Job No. everywhere.
+- **Delivery contact** name + number mandatory on create (`src/lib/requestRules.ts`, used by form and server); any
+  phone number with 7–15 digits (UAE or international). Can be changed later, not emptied.
+- **Trip documents**: types Invoice (`shipment_invoice`), Packing list, BOE, BL, Gate pass, Other supporting documents
+  (`document_types.is_request_doc`, `retention_days = 30`). Several files per heading, PDF/JPG/PNG, 10 MB. Uploaded from
+  the request form after the request is saved; can be added/removed until the trip starts (dispatch), then locked.
+  Transport sees "🖨 n to print" on the list and job, opens files in the viewer (**Print**), **Print all**, and
+  **Print trip sheet + documents** (one print: a no-price trip sheet with Job No., route, delivery contact, driver,
+  vehicle, signatures — then every page of every trip document). PODs and other files are not affected.
+- **30-day deletion** (`runDocumentCleanup` in `src/server/documents.ts`): `job_documents.expires_at` = upload time +
+  30 days (a replacement gets its own 30 days). Each run deletes the real file from storage first, then marks the
+  record `purged_at` and writes "… deleted (30-day rule)" to the job history. Failures: `purge_error`,
+  `purge_attempts`, retried next run. Runs logged in `document_cleanup_runs`; one at a time (advisory lock).
+  **Schedule**: Netlify scheduled function `netlify/functions/document-cleanup.mjs` (`@hourly`) calls
+  `POST /api/cron/document-cleanup` with a key derived from SESSION_SECRET. **Backup**: if no run for 2 hours, the
+  next normal page load (notifications check) runs it. **Check**: Settings → Document clean-up (runs, failures, Run now).
+  Expired files show "expired, deleted after 30 days"; opening one returns 410 with that message. Jobs and reports stay.
+- **Messenger Report** (`reports.ts`, key `messenger`): one list of truck jobs (transport_requests + current
+  assignment; dispatch time from the job history "Vehicle Dispatched"; "Assigned by (Transport)" = who assigned it,
+  or the subcontractor) and messenger runs (messenger_runs; collected time as dispatch; Job No. only when the run is
+  linked to a job). Filters: period (request date), type, Job No., Request/Run No., requester, department, assigned by,
+  vehicle, driver, messenger, delivery location, status; sorting, counts, Excel/CSV, print. jobScope + runScope apply.
+  Not captured today: a separate "transporter company" (only subcontractor, not used in the UI yet).
+
 ## 16. Phase status
 
 | Phase | Status |
@@ -320,5 +350,6 @@ hidden from Transport for viewing exactly as for downloading. `X-Frame-Options` 
 | Structure stage 1 — departments, managers, department-only visibility | Done |
 | Structure stage 2 — messenger runs (request, assign, collected, delivered with photo) | Done |
 | File viewer — files open on the page, Download is optional | Done |
+| Request update — Job No., delivery contact, trip documents + 30-day deletion, Messenger Report | Done |
 | Structure stage 3 — phone app (from a link) for drivers and messengers | Done |
 | 7 Email notifications · 8 Saved views, column prefs, live ops table, performance | Planned |

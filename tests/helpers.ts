@@ -23,3 +23,7 @@ export async function mkUser(by: Actor, name: string, roleCode: string, deptCode
   return (await loadActor(u.id))!;
 }
 export const deptId = async (code: string) => (await dbone('select id from departments where code = $1', [code])).id as string;
+
+let reqN = 0;
+/** The fields every new transport request must have (migration 008): Job No. + delivery contact. */
+export const reqFields = () => ({ job_no: `JN-${process.pid}-${++reqN}`, delivery_contact_person: 'Receiver', delivery_contact_number: '050 111 2233' });

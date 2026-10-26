@@ -3,7 +3,7 @@ process.env.STORAGE_DRIVER = 'local';
 process.env.LOCAL_UPLOAD_DIR = '/tmp/tms-test-uploads';
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb, mkUser, deptId } from './helpers';
+import { resetDb, mkUser, deptId, reqFields } from './helpers';
 import { one, q } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, listNotifications, updateUser } from '../src/server/admin';
@@ -25,7 +25,7 @@ async function upload(actor: Actor, job: string, type: string, name = 'pod.jpg',
   return confirmUpload(actor, job, { ticket: r.ticket, ...extra });
 }
 async function deliveredJob() {
-  const j = await createJob(ops, { customer_id: (await one('select id from customers limit 1')).id, required_date: D, pickup_name: 'A', delivery_name: 'B', base_selling_price: '777.77' });
+  const j = await createJob(ops, { ...reqFields(), customer_id: (await one('select id from customers limit 1')).id, required_date: D, pickup_name: 'A', delivery_name: 'B', base_selling_price: '777.77' });
   const drv = (await createMaster(transport, 'drivers', { full_name: 'Driver ' + j.job_number })).id;
   const veh = (await createMaster(transport, 'vehicles', { vehicle_number: 'T ' + j.job_number, vehicle_type_id: (await one("select id from vehicle_types where name='3 Ton'")).id })).id;
   await assignJob(transport, j.id, { driver_id: drv, vehicle_id: veh, planned_pickup_at: `${D}T09:00`, confirm_warnings: true });
@@ -40,7 +40,7 @@ before(async () => {
   const mk = (n: string, r: string) => mkUser(admin, n, r);
   ops = await mk('ops', 'operations_manager'); transport = await mk('tr', 'transport');
   await createMaster(ops, 'customers', { name: 'ABC' });
-  const j = await deliveredJob(); jobId = j.id; jobNo = j.job_number;
+  const j = await deliveredJob(); jobId = j.id; jobNo = j.job_no;
 });
 
 test('Transport uploads POD: job moves to POD Received, Operations is notified', async () => {
@@ -126,7 +126,7 @@ test('Notes: commercial notes hidden from Transport; the other side is notified'
   assert.equal((await listNotifications(transport)).rows.length, before, 'no notification about a commercial note');
   await rejects(addNote(transport, j.id, { body: 'x', visibility: 'commercial' }), 'FORBIDDEN');
   await addNote(ops, j.id, { body: 'Gate pass is at reception' });
-  assert.ok((await listNotifications(transport)).rows.some((n: any) => n.title === `New note on ${j.job_number}`));
+  assert.ok((await listNotifications(transport)).rows.some((n: any) => n.title === `New note on ${j.job_no}`));
   const tj = await getJob(transport, j.id);
   assert.deepEqual(tj.notes.map((n: any) => n.body), ['Gate pass is at reception']);
   await rejects(deleteNote(transport, tj.notes[0].id), 'FORBIDDEN');
@@ -141,14 +141,14 @@ test('POD reminders: sent once per period to Transport, not repeated', async () 
   await q(`update transport_assignments set actual_delivery_at = now() - interval '30 hours' where job_id = $1`, [j.id]);
   const n = await runPodReminders(true);
   assert.ok(n >= 1);
-  assert.ok((await listNotifications(transport)).rows.some((x: any) => x.title === `POD still missing for ${j.job_number}`));
+  assert.ok((await listNotifications(transport)).rows.some((x: any) => x.title === `POD still missing for ${j.job_no}`));
   assert.equal(await runPodReminders(true), 0, 'no repeat inside the reminder period');
   assert.equal(await runPodReminders(false), 0, 'throttled');
 });
 
 test('Documents of another department stay hidden', async () => {
   const limited = ops;
-  const other = await createJob(admin, { department_id: await deptId('sea_import'), customer_id: (await one('select id from customers limit 1')).id, required_date: D, pickup_name: 'X', delivery_name: 'Y' });
+  const other = await createJob(admin, { ...reqFields(), department_id: await deptId('sea_import'), customer_id: (await one('select id from customers limit 1')).id, required_date: D, pickup_name: 'X', delivery_name: 'Y' });
   const doc = (await upload(admin, other.id, 'boe', 'boe.pdf', 'application/pdf')).id;
   await rejects(downloadUrl(limited, doc), 'NOT_FOUND');
   assert.ok(!(await listDocuments(limited, {})).rows.some((r: any) => r.id === doc));

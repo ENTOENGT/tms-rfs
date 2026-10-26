@@ -2,7 +2,7 @@
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { resetDb, mkUser, deptId } from './helpers';
+import { resetDb, mkUser, deptId, reqFields } from './helpers';
 import { one, q } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, updateUser } from '../src/server/admin';
@@ -27,7 +27,7 @@ before(async () => {
   const drv = (await createMaster(tr, 'drivers', { full_name: 'Ahmed' })).id;
   const veh = (await createMaster(tr, 'vehicles', { vehicle_number: 'DXB 1', vehicle_type_id: (await one("select id from vehicle_types where name='3 Ton'")).id })).id;
   const mkJob = async (cust: string, sell: string, cost: string, d: string, hh: string, deliver = false) => {
-    const j = await createJob(ops, { customer_id: cust, required_date: d, pickup_name: 'Jebel Ali', delivery_name: 'DIP', boe_number: 'BOE-' + sell, base_selling_price: sell });
+    const j = await createJob(ops, { ...reqFields(), customer_id: cust, required_date: d, pickup_name: 'Jebel Ali', delivery_name: 'DIP', boe_number: 'BOE-' + sell, base_selling_price: sell });
     await updateFinancials(tr, j.id, { cost: { lines: [{ type: 'base', amount: cost }] } });
     await assignJob(tr, j.id, { driver_id: drv, vehicle_id: veh, planned_pickup_at: `${d}T${hh}:00`, planned_delivery_at: `${d}T${hh}:30`, confirm_warnings: true });
     if (deliver) for (const to of ['dispatched', 'picked_up', 'delivered']) await changeStatus(tr, j.id, { to });
@@ -39,18 +39,18 @@ before(async () => {
 });
 
 test('Report list follows permissions', async () => {
-  assert.deepEqual(reportList(ops).map((r) => r.key), ['operational', 'financial', 'department', 'driver', 'vehicle', 'customer', 'pod_pending']);
-  assert.equal(reportList(tr).length, 7, 'Transport keeps cost-only versions');
+  assert.deepEqual(reportList(ops).map((r) => r.key), ['operational', 'financial', 'department', 'driver', 'vehicle', 'customer', 'messenger', 'pod_pending']);
+  assert.equal(reportList(tr).length, 8, 'Transport keeps cost-only versions');
   await updateUser(admin, tr.id, { overrides: [{ code: 'finance.buying.view', granted: false }] });
   const noFin = (await loadActor(tr.id))!;
-  assert.deepEqual(reportList(noFin).map((r) => r.key), ['operational', 'pod_pending']);
+  assert.deepEqual(reportList(noFin).map((r) => r.key), ['operational', 'messenger', 'pod_pending']);
   await rejects(runReport(noFin, 'financial', P), 'FORBIDDEN');
   await updateUser(admin, tr.id, { overrides: [] });
 });
 
 test('Financial report: correct figures and totals for Operations', async () => {
   const r = await runReport(ops, 'financial', P);
-  assert.deepEqual(r.columns.map((c) => c.key), ['job_number', 'required_date', 'department_name', 'customer_name', 'status_name', 'net_revenue', 'vat', 'total_cost', 'gross_profit', 'margin_pct']);
+  assert.deepEqual(r.columns.map((c) => c.key), ['job_no', 'job_number', 'required_date', 'department_name', 'customer_name', 'status_name', 'net_revenue', 'vat', 'total_cost', 'gross_profit', 'margin_pct']);
   assert.equal(r.total, 3);
   assert.deepEqual([r.totals!.net_revenue, r.totals!.total_cost, r.totals!.gross_profit, r.totals!.margin_pct], ['5721.99', '985.00', '4736.99', '82.79']);
   const spec = r.rows.find((x) => x.net_revenue === '400.00')!;
@@ -59,7 +59,7 @@ test('Financial report: correct figures and totals for Operations', async () => 
 
 test('Transport financial report is cost-only, and cannot be ranked by hidden revenue', async () => {
   const r = await runReport(tr, 'financial', { ...P, sort: 'net_revenue', dir: 'desc' });
-  assert.deepEqual(r.columns.map((c) => c.key), ['job_number', 'required_date', 'department_name', 'customer_name', 'status_name', 'total_cost']);
+  assert.deepEqual(r.columns.map((c) => c.key), ['job_no', 'job_number', 'required_date', 'department_name', 'customer_name', 'status_name', 'total_cost']);
   const json = JSON.stringify(r);
   for (const leak of ['4321', 'net_revenue', 'gross_profit', 'vat', 'margin', '5721']) assert.ok(!json.includes(leak), `leaked ${leak}`);
   const def = await runReport(tr, 'financial', P);
@@ -72,7 +72,7 @@ test('Operational report: search, filters, sorting', async () => {
   assert.equal((await runReport(ops, 'operational', { ...P, q: 'boe-1000' })).total, 1);
   assert.equal((await runReport(ops, 'operational', { ...P, q: 'ahmed' })).total, 3);
   const s = await runReport(ops, 'operational', { ...P, sort: 'job_number', dir: 'asc' });
-  assert.deepEqual(s.rows.map((x) => x.job_number), ['JOB-1001', 'JOB-1002', 'JOB-1003']);
+  assert.deepEqual(s.rows.map((x) => x.job_number), ['TR-1001', 'TR-1002', 'TR-1003']);
   assert.equal(s.rows[0].slot, null);
   await rejects(runReport(ops, 'operational', { from: P.to, to: P.from }), 'VALIDATION');
   await rejects(runReport(ops, 'nope', P), 'NOT_FOUND');
@@ -81,7 +81,7 @@ test('Operational report: search, filters, sorting', async () => {
 test('POD pending report lists delivered jobs without POD', async () => {
   const r = await runReport(tr, 'pod_pending', {});
   assert.equal(r.total, 1);
-  assert.equal(r.rows[0].job_number, 'JOB-1001');
+  assert.equal(r.rows[0].job_number, 'TR-1001');
   assert.equal(r.rows[0].days_waiting, 0);
 });
 
@@ -97,9 +97,9 @@ test('Excel export: real numbers, title block, and Transport file has no revenue
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(x.body as any);
   const ws = wb.worksheets[0];
   assert.equal(ws.getCell('A2').value, 'Financial report');
-  assert.equal(ws.getRow(5).getCell(6).value, 'Revenue (ex VAT) (AED)');
+  assert.equal(ws.getRow(5).getCell(7).value, 'Revenue (ex VAT) (AED)');
   const totalRow = ws.getRow(ws.rowCount);
-  assert.equal(totalRow.getCell(9).value, 4736.99);
+  assert.equal(totalRow.getCell(10).value, 4736.99);
   const t = await exportReport(tr, 'financial', P, 'xlsx');
   const wb2 = new ExcelJS.Workbook(); await wb2.xlsx.load(t.body as any);
   const all: string[] = [];
@@ -110,7 +110,7 @@ test('Excel export: real numbers, title block, and Transport file has no revenue
 test('CSV export: Excel-safe text, formulas neutralised, negatives intact; exports are audited', async () => {
   const c = await exportReport(ops, 'financial', P, 'csv');
   const text = c.body.toString('utf8');
-  assert.ok(text.startsWith('\ufeffJob number,Date,Department,Customer'));
+  assert.ok(text.startsWith('\ufeffJob No.,Request No.,Date,Department,Customer'));
   assert.ok(text.includes(`"'=HYPERLINK(""http://x"",""click"")"`), 'formula neutralised');
   const log = await one(`select action, new_value from audit_log where entity_type = 'report' order by id desc limit 1`);
   assert.match(log.action, /Report exported \(CSV\)/); assert.match(log.new_value, /Financial report/);

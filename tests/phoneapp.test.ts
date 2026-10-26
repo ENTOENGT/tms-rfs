@@ -3,7 +3,7 @@ process.env.STORAGE_DRIVER = 'local';
 process.env.LOCAL_UPLOAD_DIR = '/tmp/tms-test-uploads';
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb, mkUser } from './helpers';
+import { resetDb, mkUser, reqFields } from './helpers';
 import { one, q } from '../src/server/db';
 import { loadActor, login, Actor } from '../src/server/auth';
 import { listNotifications } from '../src/server/admin';
@@ -23,7 +23,7 @@ async function rejects(p: Promise<unknown>, code: string) {
 }
 let vehN = 0;
 async function jobFor(driverId: string, price = '555.55') {
-  const j = await createJob(ops, { customer_id: (await one('select id from customers limit 1')).id, required_date: D,
+  const j = await createJob(ops, { ...reqFields(), customer_id: (await one('select id from customers limit 1')).id, required_date: D,
     pickup_name: 'Jebel Ali Port', pickup_contact_number: '0500000001', delivery_name: 'Warehouse 7', base_selling_price: price });
   const veh = (await createMaster(tm, 'vehicles', { vehicle_number: `D ${++vehN}`, vehicle_type_id: (await one("select id from vehicle_types where name='3 Ton'")).id })).id;
   await assignJob(tm, j.id, { driver_id: driverId, vehicle_id: veh, planned_pickup_at: `${D}T${String(6 + vehN).padStart(2, '0')}:00`, confirm_warnings: true, override_conflicts: true });
@@ -97,7 +97,7 @@ test('A driver sees only their own jobs — and never prices', async () => {
   assert.equal(j.pickup_contact_number, '0500000001');
   await rejects(listMaster(driver, 'customers', {}), 'FORBIDDEN');
   await rejects(dashboard(driver, D, D), 'FORBIDDEN');
-  assert.ok((await listNotifications(driver)).rows.some((n: any) => n.title === `New job for you: ${mine.job_number}`));
+  assert.ok((await listNotifications(driver)).rows.some((n: any) => n.title === `New job for you: ${mine.job_no}`));
 });
 
 test('A driver moves the job along the road and uploads the POD — nothing else', async () => {
@@ -117,7 +117,7 @@ test('Taking a job off a driver tells them, and they lose it', async () => {
   const j = await jobFor(drvA);
   const drvC = (await createMaster(tm, 'drivers', { full_name: 'Third Driver' })).id;
   await assignJob(tm, j.id, { driver_id: drvC, planned_pickup_at: `${D}T23:00`, confirm_warnings: true, override_conflicts: true });
-  assert.ok((await listNotifications(driver)).rows.some((n: any) => n.title === `${j.job_number} was given to another driver`));
+  assert.ok((await listNotifications(driver)).rows.some((n: any) => n.title === `${j.job_no} was given to another driver`));
   await rejects(getJob(driver, j.id), 'NOT_FOUND');
 });
 

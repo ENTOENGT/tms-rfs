@@ -1,7 +1,7 @@
 /** Stage 1 of the new structure: departments, managers, department-only visibility. */
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb, mkUser, deptId } from './helpers';
+import { resetDb, mkUser, deptId, reqFields } from './helpers';
 import { one, q } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { listNotifications } from '../src/server/admin';
@@ -66,7 +66,7 @@ test('Manager sees and edits only their own department', async () => {
 test('Selling price: off for sub-users until their manager turns it on', async () => {
   seaClerk = await reload(seaClerk);
   assert.equal(seaClerk.fin.sellingView, false);
-  await rejects(createJob(seaClerk, { customer_id: cust, required_date: D, pickup_name: 'A', delivery_name: 'B', base_selling_price: '500' }), 'FORBIDDEN');
+  await rejects(createJob(seaClerk, { ...reqFields(), customer_id: cust, required_date: D, pickup_name: 'A', delivery_name: 'B', base_selling_price: '500' }), 'FORBIDDEN');
   await updateUser(seaMgr, seaClerk.id, { overrides: [{ code: 'finance.selling.view', granted: true }, { code: 'finance.selling.edit', granted: true }] });
   seaClerk = await reload(seaClerk);
   assert.equal(seaClerk.fin.sellingEdit, true);
@@ -104,9 +104,9 @@ test('Department roles: created by the manager, invisible to other departments',
 
 let seaJob: string;
 test('Jobs: each department sees only its own; Transport sees all', async () => {
-  const j = await createJob(seaClerk, { customer_id: cust, required_date: D, pickup_name: 'Jebel Ali', delivery_name: 'DIP', base_selling_price: '700' });
+  const j = await createJob(seaClerk, { ...reqFields(), customer_id: cust, required_date: D, pickup_name: 'Jebel Ali', delivery_name: 'DIP', base_selling_price: '700' });
   seaJob = j.id;
-  const e = await createJob(ecomMgr, { customer_id: cust, required_date: D, pickup_name: 'A', delivery_name: 'B', base_selling_price: '300' });
+  const e = await createJob(ecomMgr, { ...reqFields(), customer_id: cust, required_date: D, pickup_name: 'A', delivery_name: 'B', base_selling_price: '300' });
   assert.equal((await getJob(seaMgr, seaJob)).department_name, 'Sea-Import');
   await rejects(getJob(ecomMgr, seaJob), 'NOT_FOUND');
   await rejects(getJob(seaClerk, e.id), 'NOT_FOUND');
@@ -125,8 +125,8 @@ test('Financials and reports follow the department rule', async () => {
 });
 
 test('Only the Super Admin creates jobs for a chosen department, or moves them', async () => {
-  await rejects(createJob(admin, { customer_id: cust, required_date: D, pickup_name: 'A', delivery_name: 'B' }), 'VALIDATION', /department/);
-  await rejects(createJob(admin, { department_id: await deptId('transport'), customer_id: cust, required_date: D, pickup_name: 'A', delivery_name: 'B' }), 'VALIDATION');
+  await rejects(createJob(admin, { ...reqFields(), customer_id: cust, required_date: D, pickup_name: 'A', delivery_name: 'B' }), 'VALIDATION', /department/);
+  await rejects(createJob(admin, { ...reqFields(), department_id: await deptId('transport'), customer_id: cust, required_date: D, pickup_name: 'A', delivery_name: 'B' }), 'VALIDATION');
   await rejects(updateRequest(seaMgr, seaJob, { department_id: await deptId('ecom') }), 'FORBIDDEN');
   await updateRequest(admin, seaJob, { department_id: await deptId('ecom') });
   assert.equal((await getJob(ecomMgr, seaJob)).department_name, 'E-Com');

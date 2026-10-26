@@ -1,7 +1,7 @@
 /** Phase 2 (masters) and Phase 3 (assignment & workflow) against real Postgres. */
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb, mkUser, deptId } from './helpers';
+import { resetDb, mkUser, deptId, reqFields } from './helpers';
 import { one, q } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, updateUser, listNotifications } from '../src/server/admin';
@@ -22,7 +22,7 @@ async function rejects(p: Promise<unknown>, code: string, check?: (e: any) => vo
   await assert.rejects(p, (e: any) => { assert.equal(e.code, code, e.message); check?.(e); return true; });
 }
 async function newJob(extra: any = {}) {
-  return createJob(ops, { customer_id: customerId, required_date: D, pickup_name: 'Jebel Ali', delivery_name: 'DIP',
+  return createJob(ops, { ...reqFields(), customer_id: customerId, required_date: D, pickup_name: 'Jebel Ali', delivery_name: 'DIP',
     base_selling_price: '400', ...extra });
 }
 
@@ -82,7 +82,7 @@ test('Assign: happy path moves job to Assigned and notifies requester', async ()
   assert.equal(j.driver_name, 'Ahmed Khan');
   assert.equal(j.vehicle_number, 'DXB 12345');
   const n = await listNotifications(ops);
-  assert.ok(n.rows.some((r: any) => r.title === `Driver and vehicle assigned to ${j.job_number}`));
+  assert.ok(n.rows.some((r: any) => r.title === `Driver and vehicle assigned to ${j.job_no}`));
   assert.equal((await listJobs(ops, { q: 'ahmed kh' })).total, 1, 'search finds job by driver name');
   assert.equal((await listJobs(ops, { q: '12345' })).total, 1, 'search finds job by plate');
 });
@@ -153,7 +153,7 @@ test('Status flow: dispatch → pickup → deliver records times; POD gate on co
   const j = await changeStatus(transport, job2, { to: 'delivered', at: at('12:50') });
   assert.equal(j.status_code, 'delivered');
   assert.ok(j.actual_pickup_at && j.actual_delivery_at);
-  assert.ok((await listNotifications(ops)).rows.some((r: any) => r.title === `${j.job_number} delivered`));
+  assert.ok((await listNotifications(ops)).rows.some((r: any) => r.title === `${j.job_no} delivered`));
   assert.equal((await listJobs(ops, { action_required: 'pod' })).total, 1, 'Delivered + POD pending = action required');
   await rejects(changeStatus(transport, job2, { to: 'completed' }), 'POD_REQUIRED');
   await rejects(setPodNotRequired(transport, job2, true), 'FORBIDDEN');
@@ -190,7 +190,7 @@ test('Draft: submit notifies Transport; Operations edits before assignment only'
   await updateRequest(ops, d.id, { special_instructions: 'Call before arrival', weight_kg: '120' });
   const moved = await changeStatus(ops, d.id, { to: 'pending_assignment' });
   assert.equal(moved.status_code, 'pending_assignment');
-  assert.ok((await listNotifications(transport)).rows.some((r: any) => r.title === `New transport request ${moved.job_number}`));
+  assert.ok((await listNotifications(transport)).rows.some((r: any) => r.title === `New transport request — Job No. ${moved.job_no}`));
   await assignJob(transport, d.id, { driver_id: rahim, vehicle_id: vanV, planned_pickup_at: at('06:00') });
   await rejects(updateRequest(ops, d.id, { special_instructions: 'late change' }), 'FORBIDDEN');
   const act = (await getJob(ops, d.id)).activity.filter((a: any) => a.action === 'Request updated').map((a: any) => a.field);

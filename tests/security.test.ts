@@ -5,7 +5,7 @@
  */
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb, mkUser, deptId } from './helpers';
+import { resetDb, mkUser, deptId, reqFields } from './helpers';
 import { q, one } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, updateUser, lookups, listNotifications } from '../src/server/admin';
@@ -38,7 +38,7 @@ before(async () => {
   finance = await mk('Fatima', 'finance');
   customerId = (await one("insert into customers (name) values ('ABC Trading') returning id")).id;
 
-  const job = await createJob(ops, {
+  const job = await createJob(ops, { ...reqFields(),
     customer_id: customerId, required_date: tomorrow, slot_from: '10:00', slot_to: '12:00', boe_number: 'BOE123456',
     pickup_name: 'Jebel Ali', delivery_name: 'Dubai Investment Park', email_subject: 'RE: urgent 3T',
     base_selling_price: SELL, discount: '0',
@@ -51,7 +51,7 @@ before(async () => {
 test('Transport job detail: cost visible, selling/revenue/profit absent', async () => {
   const j = await getJob(transport, jobId);
   assert.equal(j.financials.cost.total_cost, '285.00');
-  assert.equal(j.job_number, 'JOB-1001');
+  assert.equal(j.job_number, 'TR-1001');
   assertNoCommercial(j, 'getJob(transport)');
 });
 
@@ -71,14 +71,14 @@ test('Transport cannot infer revenue through filters or sorting', async () => {
 
 test('Transport cannot write selling price or create jobs', async () => {
   await rejects(updateFinancials(transport, jobId, { selling: { lines: [{ type: 'base', amount: '1' }] } }), 'FORBIDDEN');
-  await rejects(createJob(transport, { customer_id: customerId, required_date: tomorrow, pickup_name: 'a', delivery_name: 'b' }), 'FORBIDDEN');
+  await rejects(createJob(transport, { ...reqFields(), customer_id: customerId, required_date: tomorrow, pickup_name: 'a', delivery_name: 'b' }), 'FORBIDDEN');
 });
 
 test('Transport dashboard, lookups and notifications carry no commercial data', async () => {
   assertNoCommercial(await dashboard(transport, month.from, month.to), 'dashboard(transport)');
   assertNoCommercial(await lookups(transport), 'lookups(transport)');
   const n = await listNotifications(transport);
-  assert.equal(n.rows[0].title, 'New transport request JOB-1001');
+  assert.match(n.rows[0].title, /^New transport request — Job No\. /);
   assertNoCommercial(n, 'notifications(transport)');
 });
 
@@ -131,10 +131,10 @@ test('Spec example end-to-end: 400 selling, 285 cost -> 115 profit, 28.75%', asy
 
 test('Validation: past date, duplicate BOE warning, discount > price', async () => {
   const base = { customer_id: customerId, pickup_name: 'A', delivery_name: 'B' };
-  await rejects(createJob(ops, { ...base, required_date: '2020-01-01' }), 'VALIDATION');
-  await rejects(createJob(ops, { ...base, required_date: tomorrow, boe_number: ' boe123456 ' }), 'BOE_DUPLICATE');
-  const ok = await createJob(ops, { ...base, required_date: tomorrow, boe_number: 'BOE123456', confirm_duplicate_boe: true });
-  assert.equal(ok.job_number, 'JOB-1002');
+  await rejects(createJob(ops, { ...reqFields(), ...base, required_date: '2020-01-01' }), 'VALIDATION');
+  await rejects(createJob(ops, { ...reqFields(), ...base, required_date: tomorrow, boe_number: ' boe123456 ' }), 'BOE_DUPLICATE');
+  const ok = await createJob(ops, { ...reqFields(), ...base, required_date: tomorrow, boe_number: 'BOE123456', confirm_duplicate_boe: true });
+  assert.equal(ok.job_number, 'TR-1002');
   await rejects(updateFinancials(ops, ok.id, { selling: { lines: [{ type: 'base', amount: '10' }], discount: '11' } }), 'VALIDATION');
 });
 
@@ -155,7 +155,7 @@ test('Sessions die when role/permissions change; audit log is append-only', asyn
 
 test('Operations see their own department only', async () => {
   assert.equal((await listJobs(ops, {})).total, 2);
-  const other = await createJob(admin, { department_id: await deptId('sea_import'), customer_id: customerId, required_date: tomorrow, pickup_name: 'X', delivery_name: 'Y' });
+  const other = await createJob(admin, { ...reqFields(), department_id: await deptId('sea_import'), customer_id: customerId, required_date: tomorrow, pickup_name: 'X', delivery_name: 'Y' });
   assert.equal((await listJobs(ops, {})).total, 2, 'Sea-Import job is not visible to Operations (general)');
   await rejects(getJob(ops, other.id), 'NOT_FOUND');
   assert.equal((await listJobs(transport, {})).total, 3, 'Transport sees every department');

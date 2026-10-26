@@ -1,7 +1,7 @@
 /** Phase 5 — financial dashboard numbers and confidentiality, against real Postgres. */
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb, mkUser, deptId } from './helpers';
+import { resetDb, mkUser, deptId, reqFields } from './helpers';
 import { one, q } from '../src/server/db';
 import { loadActor, Actor } from '../src/server/auth';
 import { createUser, updateUser } from '../src/server/admin';
@@ -26,7 +26,7 @@ before(async () => {
   ahmed = (await createMaster(tr, 'drivers', { full_name: 'Ahmed' })).id;
   truck = (await createMaster(tr, 'vehicles', { vehicle_number: 'DXB 1', vehicle_type_id: (await one("select id from vehicle_types where name='3 Ton'")).id })).id;
   const job = async (cust: string, sell: string, cost: [string, string][], d = day(1), assign = false) => {
-    const j = await createJob(ops, { customer_id: cust, required_date: d, pickup_name: 'A', delivery_name: 'B', base_selling_price: sell });
+    const j = await createJob(ops, { ...reqFields(), customer_id: cust, required_date: d, pickup_name: 'A', delivery_name: 'B', base_selling_price: sell });
     await updateFinancials(tr, j.id, { cost: { lines: cost.map(([type, amount]) => ({ type, amount })) } });
     if (assign) await assignJob(tr, j.id, { driver_id: ahmed, vehicle_id: truck, planned_pickup_at: `${d}T0${3 + Math.floor(Math.random() * 6)}:00`, override_conflicts: false, confirm_warnings: true }).catch(async () =>
       assignJob(admin, j.id, { driver_id: ahmed, vehicle_id: truck, planned_pickup_at: `${d}T20:00`, override_conflicts: true }));
@@ -37,7 +37,7 @@ before(async () => {
   await job(gulf, '333.33', [['base', '100'], ['waiting', '33.33']], day(3));
   const cancelled = await job(gulf, '9999', [['base', '1']]);
   await changeStatus(ops, cancelled.id, { to: 'cancelled', reason: 'test' });
-  await createJob(ops, { customer_id: gulf, required_date: day(4), pickup_name: 'A', delivery_name: 'B', base_selling_price: '5555', save_as_draft: true });
+  await createJob(ops, { ...reqFields(), customer_id: gulf, required_date: day(4), pickup_name: 'A', delivery_name: 'B', base_selling_price: '5555', save_as_draft: true });
 });
 
 test('Totals: cancelled and drafts excluded; VAT separate from profit', async () => {
