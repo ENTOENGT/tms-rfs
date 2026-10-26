@@ -6,8 +6,9 @@
 import { PoolClient } from 'pg';
 import { Actor, requirePerm } from './auth';
 import { ApiError, audit, bad, Db, forbidden, getSetting, notFound, one, q, tx } from './db';
-import { getJob, usersWithPermission } from './jobs';
+import { checkJobNo, getJob, usersWithPermission } from './jobs';
 import { canMove } from './transitions';
+import { jobNoProblem, phoneProblem } from '../lib/requestRules';
 import { jobScope } from './scope';
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -170,13 +171,13 @@ export async function assignJob(actor: Actor, jobId: string, b: any) {
     } else await c.query('update transport_requests set updated_at = now() where id = $1', [jobId]);
     await c.query('select refresh_job_search($1)', [jobId]);
     await notify(c, [job.requested_by !== actor.id ? job.requested_by : null], 'job.assigned',
-      cur ? `Assignment changed on ${job.job_number}` : `Driver and vehicle assigned to ${job.job_number}`, jobId);
+      cur ? `Assignment changed on ${job.job_no ?? job.job_number}` : `Driver and vehicle assigned to ${job.job_no ?? job.job_number}`, jobId);
     // Drivers on the phone app hear about their own jobs
     const appUser = async (id: string | null) => id ? (await one('select user_id from drivers where id = $1', [id], c))?.user_id ?? null : null;
     const newDrv = await appUser(driverId), oldDrv = await appUser(cur?.driver_id ?? null);
-    if (newDrv && newDrv !== oldDrv) await notify(c, [newDrv], 'job.driver_assigned', `New job for you: ${job.job_number}`, jobId);
-    else if (newDrv) await notify(c, [newDrv], 'job.driver_changed', `Your job ${job.job_number} was updated`, jobId);
-    if (oldDrv && oldDrv !== newDrv) await notify(c, [oldDrv], 'job.driver_removed', `${job.job_number} was given to another driver`, jobId);
+    if (newDrv && newDrv !== oldDrv) await notify(c, [newDrv], 'job.driver_assigned', `New job for you: ${job.job_no ?? job.job_number}`, jobId);
+    else if (newDrv) await notify(c, [newDrv], 'job.driver_changed', `Your job ${job.job_no ?? job.job_number} was updated`, jobId);
+    if (oldDrv && oldDrv !== newDrv) await notify(c, [oldDrv], 'job.driver_removed', `${job.job_no ?? job.job_number} was given to another driver`, jobId);
     return { ok: true, warnings: warnings.map((w) => w.message) };
   }).then(() => getJob(actor, jobId));
 }
@@ -228,13 +229,13 @@ export async function changeStatus(actor: Actor, jobId: string, b: any) {
     // Who hears about it
     if (job.status_code === 'draft' && to === 'pending_assignment') {
       const t = await usersWithPermission(c, 'jobs.assign_driver', actor.id, jobId);
-      await notify(c, t.map((u) => u.id), 'job.created', `New transport request ${job.job_number}`, jobId);
+      await notify(c, t.map((u) => u.id), 'job.created', `New transport request — Job No. ${job.job_no ?? job.job_number}`, jobId);
     }
-    if (to === 'delivered') await notify(c, [job.requested_by], 'job.delivered', `${job.job_number} delivered`, jobId);
-    if (to === 'picked_up') await notify(c, [job.requested_by], 'job.picked_up', `${job.job_number} picked up`, jobId);
+    if (to === 'delivered') await notify(c, [job.requested_by], 'job.delivered', `${job.job_no ?? job.job_number} delivered`, jobId);
+    if (to === 'picked_up') await notify(c, [job.requested_by], 'job.picked_up', `${job.job_no ?? job.job_number} picked up`, jobId);
     if (to === 'cancelled') {
       const t = asg ? await usersWithPermission(c, 'jobs.assign_driver', actor.id, jobId) : [];
-      await notify(c, [...t.map((u) => u.id), job.requested_by !== actor.id ? job.requested_by : null], 'job.cancelled', `${job.job_number} cancelled`, jobId);
+      await notify(c, [...t.map((u) => u.id), job.requested_by !== actor.id ? job.requested_by : null], 'job.cancelled', `${job.job_no ?? job.job_number} cancelled`, jobId);
     }
   });
   return getJob(actor, jobId);
@@ -263,6 +264,7 @@ const num = (label: string, int = false): Parser => (v) => {
 };
 const time: Parser = (v) => { if (v === '' || v == null) return null; if (!/^\d{2}:\d{2}(:\d{2})?$/.test(String(v))) throw bad('Invalid time'); return String(v).slice(0, 5); };
 const EDITABLE: Record<string, { label: string; parse: Parser }> = {
+  job_no: { label: 'Job No.', parse: (v) => { const p = jobNoProblem(v); if (p) throw bad(p); return String(v).trim(); } },
   required_date: { label: 'Required date', parse: (v) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) throw bad('Required date is invalid'); return v; } },
   slot_from: { label: 'Slot from', parse: time }, slot_to: { label: 'Slot to', parse: time },
   priority: { label: 'Priority', parse: (v) => { if (!['low', 'normal', 'high', 'urgent'].includes(String(v))) throw bad('Invalid priority'); return v; } },
@@ -320,6 +322,10 @@ export async function updateRequest(actor: Actor, jobId: string, b: any) {
     if (!Object.keys(changes).length) return;
     if (changes.pickup_name && !changes.pickup_name[1]) throw bad('Pickup location is required');
     if (changes.delivery_name && !changes.delivery_name[1]) throw bad('Delivery location is required');
+    // Once given, the delivery contact can be changed but not removed
+    if (changes.delivery_contact_person && !changes.delivery_contact_person[1]) throw bad('Enter the delivery contact person\'s name');
+    if (changes.delivery_contact_number) { const pp = phoneProblem(changes.delivery_contact_number[1]); if (pp) throw bad(pp); }
+    if (changes.job_no) await checkJobNo(c, String(changes.job_no[1]), job.department_id, jobId, !!b.confirm_duplicate_job_no);
     const tz = await getSetting<string>('timezone', 'Asia/Dubai', c);
     const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
     if (changes.required_date && String(changes.required_date[1]) < today && !actor.has('jobs.backdate')) throw bad('Required date cannot be in the past');
@@ -331,7 +337,10 @@ export async function updateRequest(actor: Actor, jobId: string, b: any) {
 
     const keys = Object.keys(changes);
     await c.query(`update transport_requests set ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')}, updated_at = now() where id = $1`,
-      [jobId, ...keys.map((k) => changes[k][1])]);
+      [jobId, ...keys.map((k) => changes[k][1])]).catch((e) => {
+        if (e?.constraint === 'tr_job_no_dept_uq') throw new ApiError(409, 'JOB_NO_TAKEN', `Job No. ${changes.job_no?.[1]} is already used in this department.`);
+        throw e;
+      });
     for (const k of keys.filter((k) => EDITABLE[k])) {
       let [o, n] = changes[k];
       if (k === 'customer_id' || k === 'requested_vehicle_type_id') {
@@ -344,7 +353,7 @@ export async function updateRequest(actor: Actor, jobId: string, b: any) {
     await c.query('select refresh_job_search($1)', [jobId]);
     if (job.stage === 'active') {
       const t = await usersWithPermission(c, 'jobs.assign_driver', actor.id, jobId);
-      await notify(c, t.map((u) => u.id), 'job.updated', `Request details changed on ${job.job_number}`, jobId);
+      await notify(c, t.map((u) => u.id), 'job.updated', `Request details changed on ${job.job_no ?? job.job_number}`, jobId);
     }
   });
   return getJob(actor, jobId);

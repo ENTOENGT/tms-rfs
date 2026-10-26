@@ -36,6 +36,7 @@ export async function financials(actor: Actor, p: Record<string, string>) {
   if (p.status) where += ` and t.status_code = any(${add(p.status.split(','))})`;
   if (p.completed_only === '1') where += ` and t.status_code = 'completed'`;
   if (p.job_number) where += ` and t.job_number ilike ${add('%' + p.job_number.trim() + '%')}`;
+  if (p.job_no) where += ` and t.job_no ilike ${add('%' + p.job_no.trim() + '%')}`;
   if (p.boe) where += ` and t.boe_number ilike ${add('%' + p.boe.trim() + '%')}`;
 
   const jobs = await q(`

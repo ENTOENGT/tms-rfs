@@ -90,7 +90,7 @@ function AssignDialog({ job, onDone, onClose }: { job: any; onDone: (j: any) => 
   return (
     <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-label="Assign driver and vehicle" style={{ width: 'min(860px, 100%)' }}>
-        <h2>{job.driver_id || job.vehicle_id ? 'Change assignment' : 'Assign driver and vehicle'} — {job.job_number}</h2>
+        <h2>{job.driver_id || job.vehicle_id ? 'Change assignment' : 'Assign driver and vehicle'} — Job No. {job.job_no ?? job.job_number}</h2>
         <p className="muted small" style={{ marginTop: 0 }}>
           Required {fmtDate(job.required_date)}{job.slot_from ? `, ${job.slot_from.slice(0, 5)}–${(job.slot_to ?? '').slice(0, 5)}` : ''}
           {job.requested_vehicle_type ? ` · asked for ${job.requested_vehicle_type}` : ''}{job.weight_kg ? ` · ${Number(job.weight_kg)} kg` : ''}
@@ -140,7 +140,7 @@ function StatusDialog({ job, to, onDone, onClose }: { job: any; to: any; onDone:
   return (
     <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-label={to.name}>
-        <h2>{to.code === 'cancelled' ? `Cancel ${job.job_number}?` : `Mark ${job.job_number} as ${to.name}`}</h2>
+        <h2>{to.code === 'cancelled' ? `Cancel Job No. ${job.job_no ?? job.job_number}?` : `Mark Job No. ${job.job_no ?? job.job_number} as ${to.name}`}</h2>
         {err && <div className="msg err">{err}</div>}
         {timed && <label className="f"><span>{to.code === 'delivered' ? 'Delivered at' : 'Picked up at'}</span>
           <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} /></label>}

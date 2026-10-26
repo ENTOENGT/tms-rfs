@@ -29,7 +29,7 @@ export const TASKS: Record<string, string> = {
 const PROOF_TYPES: Record<string, string> = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png' };
 
 // ------------------------------------------------------------ helpers
-function runScope(actor: Actor, params: unknown[], alias = 'm'): string {
+export function runScope(actor: Actor, params: unknown[], alias = 'm'): string {
   if (actor.has('runs.view_all')) return '';
   params.push(actor.id);
   const me = `$${params.length}`;
@@ -39,7 +39,7 @@ function runScope(actor: Actor, params: unknown[], alias = 'm'): string {
   }
   return ` and (${alias}.requested_by = ${me} or ${alias}.messenger_id = ${me})`;
 }
-const canSeeRuns = (a: Actor) => ['runs.view_all', 'runs.view_department', 'runs.create', 'runs.update_status', 'runs.assign'].some((p) => a.has(p as any));
+export const canSeeRuns = (a: Actor) => ['runs.view_all', 'runs.view_department', 'runs.create', 'runs.update_status', 'runs.assign'].some((p) => a.has(p as any));
 
 async function notify(db: Db, userIds: (string | null | undefined)[], type: string, title: string, runId: string, exclude?: string) {
   for (const uid of [...new Set(userIds.filter((u): u is string => !!u && u !== exclude))])

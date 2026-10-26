@@ -38,7 +38,7 @@ async function visibleJob(actor: Actor, jobId: string, db?: Db, lock = false) {
   if (!canViewJobs(actor)) throw forbidden();
   const p: unknown[] = [jobId];
   const scope = jobScope(actor, p);
-  const job = await one(`select t.id, t.job_number, t.status_code, t.pod_status, t.requested_by, s.stage, s.name status_name
+  const job = await one(`select t.id, t.job_number, t.job_no, t.status_code, t.pod_status, t.requested_by, s.stage, s.name status_name
       from transport_requests t join job_statuses s on s.code = t.status_code
      where t.id = $1 and t.deleted_at is null${scope}${lock ? ' for update of t' : ''}`, p, db);
   if (!job) throw notFound('Job');
@@ -62,14 +62,23 @@ export function unsign(ticket: unknown): any {
 }
 
 // ------------------------------------------------------------ upload
-async function checkTypeAllowed(actor: Actor, db: Db | undefined, typeCode: string, mime: string) {
-  const dt = await one('select code, name, is_commercial from document_types where code = $1 and is_active', [typeCode], db);
+/** Request documents (Invoice, Packing list, BOE, BL, Gate pass, Other) can be added or replaced until the trip starts. */
+const BEFORE_DISPATCH = ['draft', 'requested', 'pending_assignment', 'assigned', 'confirmed'];
+export const EXPIRED_MSG = 'This document expired and was deleted automatically 30 days after it was uploaded.';
+
+async function checkTypeAllowed(actor: Actor, db: Db | undefined, typeCode: string, mime: string, job?: { status_code: string }) {
+  const dt = await one('select code, name, is_commercial, is_request_doc, retention_days from document_types where code = $1 and is_active', [typeCode], db);
   if (!dt) throw bad('Choose a document type');
   if (dt.code === 'pod') {
     requirePerm(actor, 'pod.upload');
     if (!POD_TYPES.includes(mime)) throw bad('POD must be a PDF, JPG or PNG');
   } else requirePerm(actor, 'documents.upload');
   if (dt.is_commercial && !canSeeCommercialDocs(actor)) throw forbidden('You cannot upload this type of document');
+  if (dt.is_request_doc) {
+    if (!POD_TYPES.includes(mime)) throw bad(`${dt.name}: only PDF, JPG or PNG files`);
+    if (job && !BEFORE_DISPATCH.includes(job.status_code) && !actor.isSuperAdmin)
+      throw new ApiError(409, 'AFTER_DISPATCH', `${dt.name} can only be added before the trip starts.`);
+  }
   return dt;
 }
 
@@ -83,7 +92,7 @@ export async function requestUpload(actor: Actor, jobId: string, b: any) {
   if (!Number.isFinite(size) || size <= 0) throw bad('The file is empty');
   if (size > MAX_BYTES) throw bad('Files can be up to 10 MB');
   const name = String(b.file_name ?? '').trim().replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 150) || `file.${ALLOWED[mime]}`;
-  await checkTypeAllowed(actor, undefined, String(b.document_type_code ?? ''), mime);
+  await checkTypeAllowed(actor, undefined, String(b.document_type_code ?? ''), mime, job);
   const store = fileStore();
   const key = `jobs/${jobId}/${randomUUID()}.${ALLOWED[mime]}`;
   const upload = await store.createUpload(key, mime);
@@ -109,10 +118,12 @@ export async function confirmUpload(actor: Actor, jobId: string, b: any) {
 
   const docId = await tx(async (c) => {
     const job = await visibleJob(actor, jobId, c, true);
-    await checkTypeAllowed(actor, c, t.type, t.mime);
+    const dt = await checkTypeAllowed(actor, c, t.type, t.mime, job);
     if (await one('select 1 from job_documents where storage_path = $1', [t.key], c)) throw new ApiError(409, 'DUPLICATE', 'Already saved');
-    const doc = await one(`insert into job_documents (job_id, document_type_code, file_name, storage_path, mime_type, size_bytes, uploaded_by, storage_driver)
-      values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`, [jobId, t.type, t.name, t.key, t.mime, info.size, actor.id, t.driver], c);
+    // Retention (e.g. 30 days) counts from THIS upload — a replaced file gets its own fresh 30 days.
+    const doc = await one(`insert into job_documents (job_id, document_type_code, file_name, storage_path, mime_type, size_bytes, uploaded_by, storage_driver, expires_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8, case when $9::int is null then null else now() + make_interval(days => $9::int) end) returning id`,
+      [jobId, t.type, t.name, t.key, t.mime, info.size, actor.id, t.driver, dt.retention_days ?? null], c);
     const typeName = (await one('select name from document_types where code = $1', [t.type], c)).name;
     const commercial = (await one('select is_commercial from document_types where code = $1', [t.type], c)).is_commercial;
     await audit(c, actor, { entity_type: 'job', entity_id: jobId, job_id: jobId, action: `${typeName} uploaded`, new_value: t.name,
@@ -139,7 +150,7 @@ async function recordPod(c: PoolClient, actor: Actor, job: any, documentId: stri
     await audit(c, actor, { entity_type: 'job', entity_id: job.id, job_id: job.id, action: 'Status changed', field: 'Status', old_value: job.status_name, new_value: 'POD Received' });
   }
   const verifiers = await usersWithPermission(c, 'pod.verify', actor.id, job.id);
-  await notify(c, [job.requested_by !== actor.id ? job.requested_by : null, ...verifiers.map((u) => u.id)], 'pod.uploaded', `POD uploaded for ${job.job_number}`, job.id);
+  await notify(c, [job.requested_by !== actor.id ? job.requested_by : null, ...verifiers.map((u) => u.id)], 'pod.uploaded', `POD uploaded for ${job.job_no ?? job.job_number}`, job.id);
 }
 
 // ------------------------------------------------------------ POD verify / reject
@@ -165,7 +176,7 @@ export async function reviewPod(actor: Actor, jobId: string, b: any) {
       await audit(c, actor, { entity_type: 'job', entity_id: jobId, job_id: jobId, action: 'POD rejected', field: 'POD', old_value: job.pod_status, new_value: `rejected — ${reason}` });
       const t = await one('select assigned_by from transport_assignments where job_id = $1 and is_current', [jobId], c);
       const uploaders = await usersWithPermission(c, 'pod.upload', actor.id, jobId);
-      await notify(c, [t?.assigned_by, ...uploaders.map((u) => u.id)], 'pod.rejected', `POD rejected for ${job.job_number}`, jobId);
+      await notify(c, [t?.assigned_by, ...uploaders.map((u) => u.id)], 'pod.rejected', `POD rejected for ${job.job_no ?? job.job_number}`, jobId);
     }
   });
   return getJob(actor, jobId);
@@ -180,13 +191,13 @@ export async function listDocuments(actor: Actor, p: Record<string, string>) {
   if (p.type) { params.push(p.type); where += ` and d.document_type_code = $${params.length}`; }
   if (p.q?.trim()) {
     params.push('%' + p.q.trim().replace(/[%_\\]/g, '\\$&') + '%');
-    where += ` and (d.file_name ilike $${params.length} or t.job_number ilike $${params.length} or t.boe_number ilike $${params.length} or c.name ilike $${params.length})`;
+    where += ` and (d.file_name ilike $${params.length} or t.job_no ilike $${params.length} or t.job_number ilike $${params.length} or t.boe_number ilike $${params.length} or c.name ilike $${params.length})`;
   }
   if (p.date_from) { params.push(p.date_from); where += ` and d.created_at >= $${params.length}::date`; }
   if (p.date_to) { params.push(p.date_to); where += ` and d.created_at < $${params.length}::date + 1`; }
   const size = Math.min(Math.max(Number(p.page_size) || 50, 1), 200), page = Math.max(Number(p.page) || 1, 1);
   const rows = await q(`select d.id, d.file_name, d.mime_type, d.size_bytes, d.created_at, d.document_type_code, dt.name document_type,
-      t.id job_id, t.job_number, t.boe_number, c.name customer_name, u.full_name uploaded_by_name, count(*) over() _total
+      d.expires_at, d.purged_at is not null expired, t.id job_id, t.job_number, t.job_no, t.boe_number, c.name customer_name, u.full_name uploaded_by_name, count(*) over() _total
     from job_documents d join document_types dt on dt.code = d.document_type_code
     join transport_requests t on t.id = d.job_id join customers c on c.id = t.customer_id
     left join users u on u.id = d.uploaded_by
@@ -206,6 +217,7 @@ async function visibleDoc(actor: Actor, docId: string, db?: Db) {
 
 export async function downloadUrl(actor: Actor, docId: string, inline = false) {
   const d = await visibleDoc(actor, docId);
+  if (d.purged_at || (d.expires_at && new Date(d.expires_at) <= new Date())) throw new ApiError(410, 'EXPIRED', EXPIRED_MSG);
   return fileStore().downloadUrl(d.storage_path, d.file_name, inline);
 }
 
@@ -217,9 +229,12 @@ export async function deleteDocument(actor: Actor, docId: string) {
     if (!actor.isSuperAdmin && !(own && actor.has(d.document_type_code === 'pod' ? 'pod.upload' : 'documents.upload')))
       throw forbidden('Only the person who uploaded it, or an admin, can remove a document');
     if (['closed', 'cancelled'].includes(job.stage) && !actor.isSuperAdmin) throw new ApiError(409, 'JOB_LOCKED', 'This job is closed.');
+    const dt = await one('select is_request_doc from document_types where code = $1', [d.document_type_code], c);
+    if (dt?.is_request_doc && !BEFORE_DISPATCH.includes(job.status_code) && !actor.isSuperAdmin)
+      throw new ApiError(409, 'AFTER_DISPATCH', 'The trip has started — request documents can no longer be removed or replaced.');
     if (d.document_type_code === 'pod' && job.pod_status === 'verified' && !actor.isSuperAdmin)
       throw new ApiError(409, 'POD_VERIFIED', 'This POD is already verified. Ask an admin if it must be removed.');
-    // Soft delete: the file stays in storage for the audit trail.
+    // Soft delete: the file stays in storage for the audit trail (request documents are still wiped at 30 days).
     await c.query('update job_documents set deleted_at = now(), deleted_by = $2 where id = $1', [docId, actor.id]);
     await audit(c, actor, { entity_type: 'job', entity_id: job.id, job_id: job.id, action: `${d.type_name} removed`, old_value: d.file_name,
       sensitivity: d.is_commercial ? 'commercial' : 'general' });
@@ -260,7 +275,7 @@ export async function addNote(actor: Actor, jobId: string, b: any) {
       }
       targets.push(uid);
     }
-    await notify(c, targets, 'job.note', `New note on ${job.job_number}`, jobId);
+    await notify(c, targets, 'job.note', `New note on ${job.job_no ?? job.job_number}`, jobId);
   });
   return getJob(actor, jobId);
 }
@@ -283,7 +298,7 @@ export async function runPodReminders(force = false) {
       where key = 'pod_reminder_last_run' and ($1 or (value #>> '{}')::timestamptz < now() - interval '10 minutes') returning 1 ok`, [force]);
   if (!claimed) return 0;
   const hours = Number(await getSetting('pod_reminder_hours', 24));
-  const due = await q(`select t.id, t.job_number, t.pod_status from transport_requests t
+  const due = await q(`select t.id, t.job_number, t.job_no, t.pod_status from transport_requests t
       join job_statuses s on s.code = t.status_code
       join transport_assignments a on a.job_id = t.id and a.is_current
      where t.deleted_at is null and s.stage = 'delivered' and t.pod_status in ('pending','rejected')
@@ -294,7 +309,7 @@ export async function runPodReminders(force = false) {
     for (const j of due) {
       const people = await usersWithPermission(c, 'pod.upload', undefined, j.id);
       await notify(c, people.map((u) => u.id), 'pod.reminder',
-        j.pod_status === 'rejected' ? `POD still needs re-uploading for ${j.job_number}` : `POD still missing for ${j.job_number}`, j.id);
+        j.pod_status === 'rejected' ? `POD still needs re-uploading for ${j.job_no ?? j.job_number}` : `POD still missing for ${j.job_no ?? j.job_number}`, j.id);
       await c.query('update transport_requests set pod_reminded_at = now() where id = $1', [j.id]);
     }
   });
@@ -327,4 +342,82 @@ export async function storageCheck(actor: Actor) {
     })
     && await run('Delete test file', async () => { await store!.remove(key); });
   return { ok, steps };
+}
+
+
+// ------------------------------------------------------------ 30-day document clean-up
+/**
+ * Deletes request documents whose retention has run out (30 days from each file's own upload time):
+ *   1. the real file is removed from storage,
+ *   2. then the record is marked "expired" (purged_at) — the job, its history and reports stay.
+ * A file that can't be deleted is logged on the document (purge_error, purge_attempts) and on the run,
+ * and is simply tried again on the next run. Runs are recorded in document_cleanup_runs.
+ *
+ * Triggered by: the Netlify scheduled function (every hour), a backup trigger on normal app use
+ * (if no run in the last 2 hours), and "Run now" in Settings.
+ */
+export async function runDocumentCleanup(trigger: 'schedule' | 'backup' | 'manual', limit = 500, storeOverride?: Pick<ReturnType<typeof fileStore>, 'remove'>) {
+  const { pool } = await import('./db');
+  const lock = await pool().connect();
+  try {
+    // only one clean-up at a time, even if two triggers fire together
+    if (!(await lock.query('select pg_try_advisory_lock(hashtext($1)) ok', ['document_cleanup'])).rows[0].ok)
+      return { skipped: true, deleted: 0, failed: 0 };
+    const run = await one('insert into document_cleanup_runs (trigger) values ($1) returning id', [trigger]);
+    let deleted = 0, failed = 0, store: Pick<ReturnType<typeof fileStore>, 'remove'> | null = null;
+    try {
+      store = storeOverride ?? fileStore();     // (tests pass a store that fails on purpose)
+      const due = await q(`select d.id, d.job_id, d.storage_path, d.file_name, dt.name type_name, dt.is_commercial
+          from job_documents d join document_types dt on dt.code = d.document_type_code
+         where d.expires_at is not null and d.expires_at <= now() and d.purged_at is null
+         order by d.expires_at limit $1`, [limit]);
+      for (const d of due) {
+        try {
+          await store.remove(d.storage_path);                          // 1. the real file
+          await tx(async (c) => {                                         // 2. then the record
+            await c.query(`update job_documents set purged_at = now(), purge_error = null, purge_tried_at = now(),
+                purge_attempts = purge_attempts + 1 where id = $1`, [d.id]);
+            await audit(c, null, { entity_type: 'job', entity_id: d.job_id, job_id: d.job_id,
+              action: `${d.type_name} deleted (30-day rule)`, old_value: d.file_name, sensitivity: d.is_commercial ? 'commercial' : 'general' });
+          });
+          deleted++;
+        } catch (e: any) {
+          failed++;
+          console.error('Document clean-up failed', d.id, e?.message ?? e);
+          await q(`update job_documents set purge_attempts = purge_attempts + 1, purge_tried_at = now(), purge_error = $2 where id = $1`,
+            [d.id, String(e?.message ?? e).slice(0, 500)]).catch(() => {});
+        }
+      }
+      await q('update document_cleanup_runs set finished_at = now(), deleted = $2, failed = $3 where id = $1', [run.id, deleted, failed]);
+    } catch (e: any) {
+      console.error('Document clean-up run failed', e);
+      await q('update document_cleanup_runs set finished_at = now(), deleted = $2, failed = $3, error = $4 where id = $1',
+        [run.id, deleted, failed, String(e?.message ?? e).slice(0, 500)]).catch(() => {});
+    }
+    return { skipped: false, deleted, failed };
+  } finally {
+    await lock.query('select pg_advisory_unlock(hashtext($1))', ['document_cleanup']).catch(() => {});
+    lock.release();
+  }
+}
+
+/** Backup in case the scheduled function ever stops: normal app use runs the clean-up if none ran for 2 hours. */
+export async function maybeRunDocumentCleanup() {
+  const last = await one(`select max(started_at) at from document_cleanup_runs`).catch(() => null);
+  if (last?.at && new Date(last.at).getTime() > Date.now() - 2 * 3600_000) return;
+  await runDocumentCleanup('backup');
+}
+
+/** Settings → Document clean-up: proof that it runs, and anything that failed. */
+export async function cleanupStatus(actor: Actor) {
+  requirePerm(actor, 'settings.manage');
+  return {
+    runs: await q(`select id, started_at, finished_at, trigger, deleted, failed, error from document_cleanup_runs order by id desc limit 10`),
+    waiting: Number((await one(`select count(*) n from job_documents where expires_at <= now() and purged_at is null`))!.n),
+    next_due: (await one(`select min(expires_at) at from job_documents where purged_at is null and expires_at > now()`))?.at ?? null,
+    deleted_30d: Number((await one(`select count(*) n from job_documents where purged_at > now() - interval '30 days'`))!.n),
+    problems: await q(`select d.id, d.file_name, t.job_no, t.job_number, d.purge_attempts, d.purge_error, d.purge_tried_at
+        from job_documents d join transport_requests t on t.id = d.job_id
+       where d.purged_at is null and d.purge_error is not null order by d.purge_tried_at desc limit 20`),
+  };
 }

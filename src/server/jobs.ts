@@ -12,11 +12,12 @@ import { Actor } from './auth';
 import { ApiError, audit, bad, Db, forbidden, getSetting, notFound, one, q, tx } from './db';
 import { allowedTransitions } from './transitions';
 import { canViewJobs, jobScope } from './scope';
+import { jobNoProblem, phoneProblem } from '../lib/requestRules';
 import { fromFils, summariseCommercial, summariseCost, summariseProfit, toFils } from '../lib/finance';
 
 // ---------------------------------------------------------------- read
 const BASE_SELECT = `
-  t.id, t.job_number, t.status_code, s.name status_name, s.color status_color, s.stage status_stage,
+  t.id, t.job_number, t.job_no, t.status_code, s.name status_name, s.color status_color, s.stage status_stage,
   t.priority, t.request_date, t.required_date, t.slot_from, t.slot_to,
   t.customer_id, c.name customer_name, t.customer_reference, t.email_subject,
   t.boe_number, t.shipment_number, t.booking_reference,
@@ -80,7 +81,7 @@ const scope = (actor: Actor, params: unknown[]) => jobScope(actor, params);
 
 export interface JobListQuery {
   q?: string; status?: string; customer_id?: string; date_from?: string; date_to?: string;
-  boe?: string; job_number?: string; pod_status?: string; vehicle_type_id?: string;
+  boe?: string; job_number?: string; job_no?: string; pod_status?: string; vehicle_type_id?: string;
   driver_id?: string; vehicle_id?: string; requested_by?: string; action_required?: string; department_id?: string;
   revenue_min?: string; revenue_max?: string; profit_min?: string; profit_max?: string;
   sort?: string; dir?: string; page?: string; page_size?: string;
@@ -88,7 +89,7 @@ export interface JobListQuery {
 
 const SORTS: Record<string, { sql: string; needs?: 'buying' | 'selling' | 'profit' }> = {
   required_date: { sql: 't.required_date' }, request_date: { sql: 't.request_date' },
-  job_number: { sql: 't.job_number' }, customer: { sql: 'c.name' }, status: { sql: 's.sort_order' },
+  job_number: { sql: 't.job_number' }, job_no: { sql: 'upper(t.job_no)' }, customer: { sql: 'c.name' }, status: { sql: 's.sort_order' },
   driver: { sql: 'dr.full_name' }, created_at: { sql: 't.created_at' },
   total_cost: { sql: 'cost.total_cost', needs: 'buying' },
   net_revenue: { sql: '(rev.gross - coalesce(jc.discount,0))', needs: 'selling' },
@@ -117,6 +118,7 @@ export async function listJobs(actor: Actor, f: JobListQuery) {
   if (f.date_to) where += ` and t.required_date <= ${add(f.date_to)}`;
   if (f.boe) where += ` and t.boe_number ilike ${add('%' + f.boe + '%')}`;
   if (f.job_number) where += ` and t.job_number ilike ${add('%' + f.job_number + '%')}`;
+  if (f.job_no) where += ` and t.job_no ilike ${add('%' + f.job_no.trim().replace(/[%_\\]/g, '\\$&') + '%')}`;
   if (f.pod_status) where += ` and t.pod_status = any(${add(f.pod_status.split(','))})`;
   if (f.vehicle_type_id) where += ` and coalesce(a.vehicle_type_id, t.requested_vehicle_type_id) = ${add(f.vehicle_type_id)}`;
   if (f.driver_id) where += ` and a.driver_id = ${add(f.driver_id)}`;
@@ -135,6 +137,8 @@ export async function listJobs(actor: Actor, f: JobListQuery) {
   const sql = `select ${BASE_SELECT}
       ${fin.buyingView ? ', cost.total_cost' : ''}
       ${fin.sellingView ? ', rev.gross, jc.discount, jc.vat_rate, jc.payment_status' : ''}
+      , (select count(*)::int from job_documents rd join document_types rdt on rdt.code = rd.document_type_code
+        where rd.job_id = t.id and rd.deleted_at is null and rd.purged_at is null and rdt.is_request_doc) docs_ready
       , count(*) over() _total
     ${BASE_FROM}
     ${fin.buyingView ? COST_JOIN : ''}
@@ -143,7 +147,7 @@ export async function listJobs(actor: Actor, f: JobListQuery) {
     order by ${sort.sql} ${dir} nulls last, t.job_number desc
     limit ${size} offset ${(page - 1) * size}`;
   const rows = await q(sql, p);
-  return { total: Number(rows[0]?._total ?? 0), page, page_size: size, rows: rows.map((r) => toJobDTO(r, actor)) };
+  return { total: Number(rows[0]?._total ?? 0), page, page_size: size, rows: rows.map((r) => ({ ...toJobDTO(r, actor), docs_ready: r.docs_ready })) };
 }
 
 export async function getJob(actor: Actor, id: string) {
@@ -187,15 +191,20 @@ export async function getJob(actor: Actor, id: string) {
     [id, fin.sellingView])).map((n) => ({ ...pick(n, ['id', 'body', 'visibility', 'created_at', 'author']),
       can_delete: n.user_id === actor.id || actor.isSuperAdmin }));
   const closedJob = ['closed', 'cancelled'].includes(row.status_stage);
+  const beforeDispatch = ['draft', 'requested', 'pending_assignment', 'assigned', 'confirmed'].includes(row.status_code);
   job.documents = (await q(
-    `select d.id, d.document_type_code, dt.name document_type, dt.is_commercial, d.file_name, d.mime_type, d.size_bytes, d.created_at,
-            d.uploaded_by, u.full_name uploaded_by_name
+    `select d.id, d.document_type_code, dt.name document_type, dt.is_commercial, dt.is_request_doc, d.file_name, d.mime_type, d.size_bytes, d.created_at,
+            d.uploaded_by, u.full_name uploaded_by_name, d.expires_at, (d.purged_at is not null or d.expires_at <= now()) expired
        from job_documents d join document_types dt on dt.code = d.document_type_code left join users u on u.id = d.uploaded_by
-      where d.job_id = $1 and d.deleted_at is null and ($2 or not dt.is_commercial) order by d.created_at`,
+      where d.job_id = $1 and d.deleted_at is null and ($2 or not dt.is_commercial) order by dt.sort_order, d.created_at`,
     [id, fin.sellingView && actor.has('documents.view_commercial')]))
-    .map((d) => ({ ...pick(d, ['id', 'document_type_code', 'document_type', 'file_name', 'mime_type', 'size_bytes', 'created_at', 'uploaded_by_name']),
-      can_delete: actor.isSuperAdmin || (d.uploaded_by === actor.id && !closedJob &&
-        !(d.document_type_code === 'pod' && row.pod_status === 'verified')) }));
+    .map((d) => ({ ...pick(d, ['id', 'document_type_code', 'document_type', 'is_request_doc', 'file_name', 'mime_type', 'size_bytes', 'created_at', 'uploaded_by_name', 'expires_at', 'expired']),
+      can_delete: !d.expired && (actor.isSuperAdmin || (d.uploaded_by === actor.id && !closedJob &&
+        !(d.document_type_code === 'pod' && row.pod_status === 'verified') && !(d.is_request_doc && !beforeDispatch))) }));
+  job.request_docs = {
+    ready: job.documents.filter((d: any) => d.is_request_doc && !d.expired).length,
+    expired: job.documents.filter((d: any) => d.is_request_doc && d.expired).length,
+  };
   const pod = await one(`select p.pod_date, p.received_by, p.remarks, p.verified_at, p.rejection_reason, v.full_name verified_by_name
       from job_pod p left join users v on v.id = p.verified_by where p.job_id = $1`, [id]);
   job.pod = pod ? pick(pod, ['pod_date', 'received_by', 'remarks', 'verified_at', 'rejection_reason', 'verified_by_name']) : null;
@@ -212,13 +221,31 @@ export async function getJob(actor: Actor, id: string) {
     pod_requirement: actor.has('pod.verify') && !['closed', 'cancelled'].includes(stage),
     verify_pod: actor.has('pod.verify') && ['uploaded', 'verified'].includes(row.pod_status) && !['closed', 'cancelled'].includes(stage),
     upload_documents: (actor.has('documents.upload') || actor.has('pod.upload')) && stage !== 'cancelled' && (stage !== 'closed' || actor.has('jobs.edit_completed')),
-    upload_types: (await q('select code, name, is_commercial from document_types where is_active order by name'))
-      .filter((t) => (t.code === 'pod' ? actor.has('pod.upload') : actor.has('documents.upload')) && (!t.is_commercial || (fin.sellingView && actor.has('documents.view_commercial'))))
-      .map((t) => ({ code: t.code, name: t.name })),
+    upload_types: (await q('select code, name, is_commercial, is_request_doc from document_types where is_active order by sort_order, name'))
+      .filter((t) => (t.code === 'pod' ? actor.has('pod.upload') : actor.has('documents.upload')) && (!t.is_commercial || (fin.sellingView && actor.has('documents.view_commercial')))
+        && (!t.is_request_doc || beforeDispatch || actor.isSuperAdmin))
+      .map((t) => ({ code: t.code, name: t.name, is_request_doc: t.is_request_doc })),
     add_note: stage !== 'cancelled', ...(fin.sellingView ? { add_commercial_note: true } : {}),
   };
   job.next_statuses = locked ? [] : await allowedTransitions(actor, row);
   return job;
+}
+
+// ---------------------------------------------------------------- Job No.
+const jobNoTaken = (jobNo: string) => new ApiError(409, 'JOB_NO_TAKEN',
+  `Job No. ${jobNo} is already used in your department. Check the number, or open the existing job.`, { fields: { job_no: 'Already used in this department' } });
+/**
+ * The same department can't use a Job No. twice (cancelled jobs don't count).
+ * Another department using it gets a warning; sending again with confirm=true goes ahead.
+ */
+export async function checkJobNo(db: Db, jobNo: string, deptId: string, exceptJob: string | null, confirmed: boolean) {
+  const same = await q(`select t.id, t.job_number, t.department_id, d.name dept from transport_requests t left join departments d on d.id = t.department_id
+      where upper(btrim(t.job_no)) = upper($1) and t.deleted_at is null and t.status_code <> 'cancelled' and ($2::uuid is null or t.id <> $2)`,
+    [jobNo, exceptJob], db);
+  if (same.some((x) => x.department_id === deptId)) throw jobNoTaken(jobNo);
+  if (same.length && !confirmed) throw new ApiError(409, 'JOB_NO_OTHER_DEPT',
+    `Job No. ${jobNo} is also used by ${[...new Set(same.map((x) => x.dept ?? 'another department'))].join(', ')}. Send again to confirm it is a separate request.`,
+    { departments: [...new Set(same.map((x) => x.dept))] });
 }
 
 // ---------------------------------------------------------------- create
@@ -289,6 +316,13 @@ export async function createJob(actor: Actor, b: any) {
   if (b.slot_to && !isTime(b.slot_to)) throw bad('Time slot "to" is invalid');
   if (b.slot_from && b.slot_to && b.slot_to <= b.slot_from) throw bad('Time slot must end after it starts');
   if (!s(b.customer_id)) throw bad('Customer is required');
+  // Mandatory on every new request: the company's own Job No. and who receives the goods.
+  const jobNo = String(b.job_no ?? '').trim();
+  const problems: Record<string, string> = {};
+  const jp = jobNoProblem(jobNo); if (jp) problems.job_no = jp;
+  if (!String(b.delivery_contact_person ?? '').trim() && !b.delivery_location_id) problems.delivery_contact_person = 'Enter the delivery contact person\'s name';
+  if (!b.delivery_location_id) { const pp = phoneProblem(b.delivery_contact_number); if (pp) problems.delivery_contact_number = pp; }
+  if (Object.keys(problems).length) throw new ApiError(400, 'VALIDATION', Object.values(problems)[0], { fields: problems });
   const priority = b.priority ?? 'normal';
   if (!['low', 'normal', 'high', 'urgent'].includes(priority)) throw bad('Invalid priority');
 
@@ -309,6 +343,12 @@ export async function createJob(actor: Actor, b: any) {
     }
     const pu = await locationSnapshot(c, 'pickup', b);
     const de = await locationSnapshot(c, 'delivery', b);
+    // a saved delivery location fills the contact — unless the requester typed one for this job
+    de.contact_person = s(b.delivery_contact_person, 120) ?? de.contact_person;
+    de.contact_number = s(b.delivery_contact_number, 40) ?? de.contact_number;
+    if (!de.contact_person) throw new ApiError(400, 'VALIDATION', 'Enter the delivery contact person\'s name', { fields: { delivery_contact_person: 'Enter the delivery contact person\'s name' } });
+    const pp = phoneProblem(de.contact_number);
+    if (pp) throw new ApiError(400, 'VALIDATION', pp, { fields: { delivery_contact_number: pp } });
     const prefix = await getSetting<string>('job_number_prefix', 'JOB-', c);
     const vatRate = await getSetting<number>('vat_rate', 5, c);
     // The job belongs to an operations department. Operations staff: their own department.
@@ -320,17 +360,18 @@ export async function createJob(actor: Actor, b: any) {
       if (!d) throw bad('Choose which department this request is for');
       deptId = d.id;
     }
+    await checkJobNo(c, jobNo, deptId!, null, !!b.confirm_duplicate_job_no);
 
-    const job = await one<{ id: string; job_number: string }>(
-      `insert into transport_requests (job_number, status_code, priority, required_date, slot_from, slot_to,
+    const job = await one<{ id: string; job_number: string; job_no: string }>(
+      `insert into transport_requests (job_no, job_number, status_code, priority, required_date, slot_from, slot_to,
          department_id, requested_by, customer_id, customer_reference, email_subject, boe_number, shipment_number,
          booking_reference, requested_vehicle_type_id,
          pickup_location_id, pickup_name, pickup_address, pickup_contact_person, pickup_contact_number, pickup_latitude, pickup_longitude,
          delivery_location_id, delivery_name, delivery_address, delivery_contact_person, delivery_contact_number, delivery_latitude, delivery_longitude,
          cargo_description, cargo_type, packages, weight_kg, volume_cbm, pallets, temperature_requirement, special_handling, special_instructions)
-       values ($1 || nextval('job_number_seq'), $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+       values ($39, $1 || nextval('job_number_seq'), $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
                $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38)
-       returning id, job_number`,
+       returning id, job_number, job_no`,
       [prefix, b.save_as_draft ? 'draft' : 'pending_assignment', priority, b.required_date, b.slot_from || null, b.slot_to || null,
        deptId, actor.id, b.customer_id, s(b.customer_reference, 120), s(b.email_subject, 300), boe,
        s(b.shipment_number, 60), s(b.booking_reference, 60), b.requested_vehicle_type_id || null,
@@ -338,7 +379,10 @@ export async function createJob(actor: Actor, b: any) {
        de.id, de.name, de.address, de.contact_person, de.contact_number, de.latitude, de.longitude,
        s(b.cargo_description, 2000), s(b.cargo_type, 80), n(b.packages, 'Packages'), n(b.weight_kg, 'Weight'),
        n(b.volume_cbm, 'Volume'), n(b.pallets, 'Pallets'), s(b.temperature_requirement, 80),
-       s(b.special_handling, 500), s(b.special_instructions, 2000)], c);
+       s(b.special_handling, 500), s(b.special_instructions, 2000), jobNo], c).catch((e) => {
+        if (e?.constraint === 'tr_job_no_dept_uq') throw jobNoTaken(jobNo);    // someone saved the same Job No. a moment ago
+        throw e;
+      });
     if (!job) throw new Error('Insert failed');
 
     await c.query('insert into job_commercials (job_id, vat_rate) values ($1, $2)', [job.id, vatRate]);
@@ -355,7 +399,7 @@ export async function createJob(actor: Actor, b: any) {
     await c.query('select refresh_job_search($1)', [job.id]);
     if (!b.save_as_draft) {
       const transport = await usersWithPermission(c, 'jobs.assign_driver', actor.id, job.id);
-      await notify(c, transport.map((u) => u.id), 'job.created', `New transport request ${job.job_number}`, job.id);
+      await notify(c, transport.map((u) => u.id), 'job.created', `New transport request — Job No. ${job.job_no}`, job.id);
     }
     return job;
   });

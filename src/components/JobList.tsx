@@ -41,7 +41,8 @@ export default function JobList({ mode }: { mode: 'requests' | 'jobs' }) {
       </div>
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="grid g4">
-          <label className="f"><span>Search</span><input value={f.q} onChange={set('q')} placeholder="Job, BOE, driver, vehicle, customer…" /></label>
+          <label className="f"><span>Search</span><input value={f.q} onChange={set('q')} placeholder="Job No., BOE, driver, vehicle, customer…" /></label>
+          <label className="f"><span>Job No.</span><input value={f.job_no ?? ''} onChange={set('job_no')} placeholder="e.g. SI-2026-0451" /></label>
           <label className="f"><span>Status</span>
             <select value={f.status} onChange={set('status')}>
               <option value="">All statuses</option>
@@ -96,7 +97,7 @@ export default function JobList({ mode }: { mode: 'requests' | 'jobs' }) {
         <div className="table-wrap">
           <table className="t">
             <thead><tr>
-              <Th k="job_number">Job</Th>{manyDepts && <Th>Department</Th>}<Th k="required_date">Required</Th><Th>Slot</Th><Th k="customer">Customer</Th>
+              <Th k="job_no">Job No.</Th>{manyDepts && <Th>Department</Th>}<Th k="required_date">Required</Th><Th>Slot</Th><Th k="customer">Customer</Th>
               <Th>BOE</Th><Th>Pickup</Th><Th>Delivery</Th><Th>Vehicle</Th><Th k="driver">Driver</Th><Th k="status">Status</Th>
               {fin.sellingView && <Th k="net_revenue" num>Selling</Th>}
               {fin.buyingView && <Th k="total_cost" num>Cost</Th>}
@@ -108,7 +109,9 @@ export default function JobList({ mode }: { mode: 'requests' | 'jobs' }) {
                 const podMissing = j.status_stage === 'delivered' && ['pending', 'rejected'].includes(j.pod_status);
                 return (
                   <tr key={j.id}>
-                    <td><Link href={`/jobs/${j.id}`}><b>{j.job_number}</b></Link>{j.priority === 'urgent' && <div className="flag">Urgent</div>}</td>
+                    <td><Link href={`/jobs/${j.id}`}><b>{j.job_no ?? j.job_number}</b></Link><div className="muted small">{j.job_number}</div>
+                      {j.docs_ready > 0 && <span className="print-badge" title="Documents ready to print">🖨 {j.docs_ready}</span>}
+                      {j.priority === 'urgent' && <div className="flag">Urgent</div>}</td>
                     {manyDepts && <td>{j.department_name ?? '—'}</td>}
                     <td>{fmtDate(j.required_date)}</td><td>{slot(j.slot_from, j.slot_to)}</td><td>{j.customer_name}</td>
                     <td>{j.boe_number ?? '—'}</td><td>{j.pickup_name}</td><td>{j.delivery_name}</td>

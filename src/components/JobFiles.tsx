@@ -61,7 +61,7 @@ export function UploadDialog({ job, podOnly, onDone, onClose }: { job: any; podO
   return (
     <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && !busy && onClose()}>
       <div className="modal" role="dialog" aria-label={isPod ? 'Upload POD' : 'Upload document'}>
-        <h2>{isPod ? `Upload POD — ${job.job_number}` : `Upload document — ${job.job_number}`}</h2>
+        <h2>{isPod ? `Upload POD — Job No. ${job.job_no ?? job.job_number}` : `Upload document — Job No. ${job.job_no ?? job.job_number}`}</h2>
         {err && <div className="msg err">{err}</div>}
         <div className="grid g2">
           {!podOnly && <label className="f span2"><span>Document type</span>
@@ -132,7 +132,7 @@ export function PodCard({ job, onChange }: { job: any; onChange: (j: any) => voi
       {dialog === 'reject' && (
         <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setDialog(null)}>
           <div className="modal" role="dialog" aria-label="Reject POD">
-            <h2>Reject POD — {job.job_number}</h2>
+            <h2>Reject POD — Job No. {job.job_no ?? job.job_number}</h2>
             <p className="muted small" style={{ marginTop: 0 }}>Transport is notified and asked to upload a corrected POD.</p>
             <label className="f"><span>What is wrong? <em>*</em></span><textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. No stamp / signature, wrong job" /></label>
             <div className="actions"><button className="btn" onClick={() => setDialog(null)}>Back</button>
@@ -147,6 +147,10 @@ export function PodCard({ job, onChange }: { job: any; onChange: (j: any) => voi
 export function DocumentsTab({ job, onChange }: { job: any; onChange: (j: any) => void }) {
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState('');
+  const reqDocs = job.documents.filter((d: any) => d.is_request_doc), otherDocs = job.documents.filter((d: any) => !d.is_request_doc);
+  const live = reqDocs.filter((d: any) => !d.expired);
+  const [printing, setPrinting] = useState('');
+  const viewable = job.documents.filter((d: any) => !d.expired);          // the viewer pages through files that still exist
   const remove = async (d: any) => {
     if (!confirm(`Remove ${d.file_name}? It stays in the job history.`)) return;
     try { await api(`/api/documents/${d.id}`, { method: 'DELETE' }); onChange(await api(`/api/jobs/${job.id}`)); }
@@ -159,19 +163,29 @@ export function DocumentsTab({ job, onChange }: { job: any; onChange: (j: any) =
         {job.permissions.upload_documents && job.permissions.upload_types.length > 0 && <button className="btn primary" onClick={() => setOpen(true)}>Upload document</button>}
       </div>
       {err && <div className="msg err" style={{ margin: '0 16px 8px' }}>{err}</div>}
-      <div className="table-wrap"><table className="t">
-        <thead><tr><th>Type</th><th>File</th><th>Size</th><th>Uploaded</th><th /></tr></thead>
-        <tbody>
-          {job.documents.map((d: any, i: number) => <tr key={d.id}>
-            <td>{d.document_type}</td>
-            <td><FileLink files={job.documents} index={i} base={docUrl} /></td>
-            <td>{fmtSize(d.size_bytes)}</td>
-            <td>{d.uploaded_by_name ?? '—'} <span className="muted small">· {fmtDateTime(d.created_at)}</span></td>
-            <td style={{ textAlign: 'right' }}>{d.can_delete && <button className="btn small danger" onClick={() => remove(d)}>Remove</button>}</td>
-          </tr>)}
-          {job.documents.length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 20, textAlign: 'center' }}>No documents yet.</td></tr>}
-        </tbody>
-      </table></div>
+      {[['Documents for the trip', reqDocs, true], ['Other files', otherDocs, false]].map(([title, list, isReq]: any) => (list.length > 0 || isReq) && (
+        <div key={title}>
+          <h3 className="docs-h">{title}{isReq && live.length > 0 && <span className="print-badge" style={{ marginLeft: 8 }}>🖨 {live.length} ready to print</span>}
+            {isReq && live.length > 1 && <button className="btn small" style={{ marginLeft: 'auto' }} disabled={!!printing}
+              onClick={() => printFiles(live.map((d: any) => `${docUrl(d.id)}?view=1`), setPrinting).catch((e) => { setPrinting(''); setErr(e.message); })}>
+              {printing || `Print all ${live.length}`}</button>}</h3>
+          {isReq && <p className="muted small" style={{ margin: '0 16px 6px' }}>Click a file to open it, then <b>Print</b>. These files are deleted automatically 30 days after upload.</p>}
+          <div className="table-wrap"><table className="t">
+            <thead><tr><th>Type</th><th>File</th><th>Size</th><th>Uploaded</th><th /></tr></thead>
+            <tbody>
+              {list.map((d: any) => <tr key={d.id}>
+                <td>{d.document_type}</td>
+                <td>{d.expired ? <span className="expired-tag">{d.file_name} — expired, deleted after 30 days</span>
+                  : <FileLink files={viewable} index={viewable.indexOf(d)} base={docUrl} />}
+                  {!d.expired && d.expires_at && <div className="muted small">Deleted on {fmtDate(d.expires_at)}</div>}</td>
+                <td>{d.expired ? '—' : fmtSize(d.size_bytes)}</td>
+                <td>{d.uploaded_by_name ?? '—'} <span className="muted small">· {fmtDateTime(d.created_at)}</span></td>
+                <td style={{ textAlign: 'right' }}>{d.can_delete && <button className="btn small danger" onClick={() => remove(d)}>Remove</button>}</td>
+              </tr>)}
+              {list.length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 16, textAlign: 'center' }}>No documents for the trip yet.</td></tr>}
+            </tbody>
+          </table></div>
+        </div>))}
       {open && <UploadDialog job={job} onClose={() => setOpen(false)} onDone={(j) => { setOpen(false); if (j) onChange(j); }} />}
     </div>
   );
@@ -226,6 +240,7 @@ const kindOf = (f: ViewFile) => {
 
 export function FileViewer({ files, start, base, onClose }: { files: ViewFile[]; start: number; base: (id: string) => string; onClose: () => void }) {
   const [i, setI] = useState(start);
+  const [printMsg, setPrintMsg] = useState('');
   const f = files[i];
   const url = base(f.id);
   const kind = kindOf(f);
@@ -250,6 +265,11 @@ export function FileViewer({ files, start, base, onClose }: { files: ViewFile[];
             <button className="btn small" disabled={i === 0} onClick={() => setI(i - 1)}>‹ Previous</button>
             <button className="btn small" disabled={i === files.length - 1} onClick={() => setI(i + 1)}>Next ›</button></>}
           <a className="btn small" href={`${url}?view=1`} target="_blank" rel="noopener">Open in new tab</a>
+          {kind !== 'other' && <button className="btn small" disabled={!!printMsg} onClick={() => {
+            // phones print from the browser's own viewer
+            if (isPhone()) { window.open(`${url}?view=1`, '_blank'); return; }
+            printFiles([`${url}?view=1`], setPrintMsg).catch((e) => { setPrintMsg(''); alert(e.message); });
+          }}>{printMsg || 'Print'}</button>}
           <a className="btn small primary" href={url}>Download</a>
           <button className="btn small" onClick={onClose}>Close</button>
         </div>
@@ -279,6 +299,63 @@ function sniff(b: Uint8Array): 'pdf' | string | null {
   return head.includes('%PDF') ? 'pdf' : null;
 }
 
+async function loadPdf(bytes: Uint8Array) {
+  const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf');
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/legacy/build/pdf.worker.min.js', import.meta.url).toString();
+  return pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise;
+}
+
+/**
+ * Print one or many files with ONE print dialog: photos as they are, every PDF page drawn as an image.
+ * Works the same in every desktop browser and never downloads the file.
+ */
+export async function printFiles(urls: string[], onStep?: (msg: string) => void, coverHtml?: string) {
+  const pages: string[] = [];
+  for (let i = 0; i < urls.length; i++) {
+    onStep?.(`Preparing ${i + 1} of ${urls.length}…`);
+    const res = await fetch(urls[i]);
+    if (res.status === 410) continue;                                 // expired in the meantime
+    if (!res.ok) throw new Error(`Could not open file ${i + 1} (${res.status})`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const kind = sniff(bytes);
+    if (kind === 'pdf') {
+      const doc = await loadPdf(bytes);
+      for (let n = 1; n <= Math.min(doc.numPages, 100); n++) {
+        const page = await doc.getPage(n);
+        const vp = page.getViewport({ scale: 2 });                    // ~150 dpi on A4: sharp on paper
+        const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+        await page.render({ canvasContext: c.getContext('2d')!, viewport: vp }).promise;
+        pages.push(c.toDataURL('image/jpeg', 0.92));
+      }
+    } else if (kind) pages.push(URL.createObjectURL(new Blob([bytes], { type: kind })));
+    else throw new Error('One of the files is not a PDF or photo — download it to print.');
+  }
+  if (!pages.length && !coverHtml) throw new Error('Nothing to print.');
+  onStep?.('Opening the print window…');
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  Object.assign(frame.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
+  document.body.appendChild(frame);
+  const d = frame.contentDocument!;
+  d.open();
+  d.write(`<!doctype html><html><head><title>Print</title><style>@page{margin:8mm}html,body{margin:0}
+    .p{page-break-after:always;break-after:page;display:flex;align-items:center;justify-content:center;height:100vh}
+    .p:last-child{page-break-after:auto;break-after:auto}img{max-width:100%;max-height:100%;object-fit:contain}
+    .sheet{font:13px/1.45 Arial,sans-serif;color:#111;${pages.length ? 'page-break-after:always;break-after:page;' : ''}}
+    .sheet h1{font-size:22px;margin:0}.sheet table{width:100%;border-collapse:collapse;margin-top:10px}
+    .sheet td{border:1px solid #999;padding:6px 8px;vertical-align:top}.sheet td.k{width:28%;background:#f1f1f1;font-weight:bold}
+    .sheet .sig{display:flex;gap:30px;margin-top:40px}.sheet .sig div{flex:1;border-top:1px solid #333;padding-top:4px}</style></head><body>
+    ${coverHtml ? `<div class="sheet">${coverHtml}</div>` : ''}
+    ${pages.map((src) => `<div class="p"><img src="${src}"></div>`).join('')}</body></html>`);
+  d.close();
+  await Promise.all([...d.images].map((im) => (im.complete ? null : new Promise((ok) => { im.onload = ok; im.onerror = ok; }))));
+  frame.contentWindow!.focus();
+  frame.contentWindow!.print();
+  onStep?.('');
+  setTimeout(() => { frame.remove(); pages.forEach((u) => u.startsWith('blob:') && URL.revokeObjectURL(u)); }, 60_000);
+}
+const isPhone = () => typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 /** Shows a PDF page by page, or a photo — decided by the file's real contents. Phones never get a forced download. */
 function SmartPreview({ url, name }: { url: string; name: string }) {
   const box = useRef<HTMLDivElement>(null);
@@ -296,9 +373,7 @@ function SmartPreview({ url, name }: { url: string; name: string }) {
         const kind = sniff(bytes);
         if (kind && kind !== 'pdf') { blobUrl = URL.createObjectURL(new Blob([bytes], { type: kind })); setImg(blobUrl); return; }
         if (!kind) throw new Error('unknown');
-        const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf');
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/legacy/build/pdf.worker.min.js', import.meta.url).toString();
-        const doc = await pdfjs.getDocument({ data: bytes, isEvalSupported: false }).promise;
+        const doc = await loadPdf(bytes);
         if (stop) return;
         setPages(doc.numPages); setState('pdf');
         const el = box.current; if (!el) return;
@@ -343,3 +418,30 @@ export function FileLink({ files, index, base }: { files: ViewFile[]; index: num
 }
 export const docUrl = (id: string) => `/api/documents/${id}/download`;
 export const runFileUrl = (id: string) => `/api/run-files/${id}`;
+
+const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+/** One-page trip sheet the transporter hands to the driver with the printed documents. No prices on it. */
+export function tripSheetHtml(job: any, docs: any[], tz = 'Asia/Dubai') {
+  const dt = (v?: string | null) => (v ? new Date(v).toLocaleString('en-GB', { timeZone: tz, dateStyle: 'medium', timeStyle: 'short' }) : '');
+  const row = (k: string, v: unknown) => `<tr><td class="k">${esc(k)}</td><td>${esc(v) || '&nbsp;'}</td></tr>`;
+  return `<div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px">
+      <div><h1>TRIP SHEET — Job No. ${esc(job.job_no ?? job.job_number)}</h1><div>Request No. ${esc(job.job_number)} · ${esc(job.department_name ?? '')}</div></div>
+      <img src="${location.origin}/brand/logo.png" style="height:40px;max-width:none"></div>
+    <table>
+      ${row('Date required', job.required_date + (job.slot_from ? `, ${job.slot_from.slice(0, 5)}${job.slot_to ? '–' + job.slot_to.slice(0, 5) : ''}` : ''))}
+      ${row('Driver', [job.driver_name, job.driver_mobile].filter(Boolean).join(' · '))}
+      ${row('Vehicle', job.vehicle_number)}
+      ${row('Planned pickup', dt(job.planned_pickup_at))}
+      ${row('Pick up from', [job.pickup_name, job.pickup_address].filter(Boolean).join(', '))}
+      ${row('Pickup contact', [job.pickup_contact_person, job.pickup_contact_number].filter(Boolean).join(' · '))}
+      ${row('Deliver to', [job.delivery_name, job.delivery_address].filter(Boolean).join(', '))}
+      ${row('Delivery contact', [job.delivery_contact_person, job.delivery_contact_number].filter(Boolean).join(' · '))}
+      ${row('Customer', job.customer_name)}
+      ${row('BOE', job.boe_number)}
+      ${row('Goods', [job.cargo_description, job.packages != null ? job.packages + ' packages' : '', job.pallets != null ? job.pallets + ' pallets' : '',
+        job.weight_kg ? job.weight_kg + ' kg' : ''].filter(Boolean).join(' · '))}
+      ${row('Instructions', [job.special_instructions, job.special_handling, job.temperature_requirement].filter(Boolean).join(' · '))}
+      ${row('Documents attached', docs.length ? docs.map((d) => `${d.document_type}: ${d.file_name}`).join('; ') : 'None')}
+    </table>
+    <div class="sig"><div>Driver signature</div><div>Received by (name, signature, stamp)</div><div>Date / time</div></div>`;
+}
