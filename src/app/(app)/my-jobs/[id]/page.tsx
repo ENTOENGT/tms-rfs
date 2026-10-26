@@ -63,7 +63,7 @@ export default function MyJob({ params }: { params: { id: string } }) {
     <div className="app-page">
       <Link href="/my-jobs" className="app-back">‹ My jobs</Link>
       <div className="app-card-head" style={{ margin: '6px 0 2px' }}>
-        <h1 style={{ margin: 0, fontSize: 22 }}>{j.job_number}</h1>
+        <h1 style={{ margin: 0, fontSize: 22 }}>{j.job_no ?? j.job_number}</h1>
         <span className="badge" style={{ background: j.status_color }}>{j.status_name}</span>
         {j.priority === 'urgent' && <span className="flag">Urgent</span>}
       </div>

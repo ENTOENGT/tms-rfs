@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { api } from '@/components/api';
+import { api, fmtDateTime } from '@/components/api';
 import { useMe } from '@/components/Shell';
 import MasterPage from '@/components/MasterPage';
 
@@ -8,7 +8,7 @@ const FIELDS: [string, string, string, string?][] = [
   ['company_name', 'Company name', 'text'],
   ['currency', 'Currency code', 'text', 'e.g. AED'],
   ['vat_rate', 'VAT rate (%)', 'number', 'Applies to jobs created after you change it'],
-  ['job_number_prefix', 'Job number prefix', 'text', 'e.g. JOB- gives JOB-1001'],
+  ['job_number_prefix', 'Request No. prefix', 'text', 'Automatic Request No. — e.g. TR- gives TR-1001. The Job No. is typed by Operations.'],
   ['timezone', 'Timezone', 'text', 'Asia/Dubai'],
   ['expiry_warning_days', 'Warn about expiring documents (days)', 'number', 'Licence, visa, registration, insurance'],
   ['pod_reminder_hours', 'POD reminder after (hours)', 'number', 'Used when reminders arrive in Phase 7'],
@@ -72,6 +72,45 @@ function StorageCheck() {
   );
 }
 
+/** The 30-day rule: proof that it runs, what it deleted, and anything that failed (retried automatically). */
+function DocumentCleanup() {
+  const [d, setD] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const load = () => api('/api/settings/document-cleanup').then(setD).catch((e) => setMsg(e.message));
+  useEffect(() => { load(); }, []);
+  const run = async () => {
+    setBusy(true); setMsg('');
+    try { const r = await api('/api/settings/document-cleanup', { body: {} });
+      setMsg(r.skipped ? 'A clean-up is already running.' : `Done: ${r.deleted} deleted, ${r.failed} failed.`); load(); }
+    catch (e: any) { setMsg(e.message); }
+    setBusy(false);
+  };
+  return (
+    <div className="panel">
+      <div className="page-head" style={{ marginBottom: 8 }}><h2 style={{ margin: 0 }}>Document clean-up (30-day rule)</h2><span className="spacer" />
+        <button className="btn small" disabled={busy} onClick={run}>{busy ? 'Running…' : 'Run now'}</button></div>
+      <p className="muted small" style={{ marginTop: 0 }}>Trip documents (Invoice, Packing list, BOE, BL, Gate pass, Other) are deleted 30 days after each upload —
+        the file in storage and then its record. Runs every hour automatically. Jobs, history and reports are never deleted. PODs are kept.</p>
+      {msg && <div className="msg">{msg}</div>}
+      {d && <>
+        <p className="small">Deleted in the last 30 days: <b>{d.deleted_30d}</b> · Waiting now: <b>{d.waiting}</b>
+          {d.next_due && <> · Next one due: <b>{fmtDateTime(d.next_due)}</b></>}</p>
+        <div className="table-wrap"><table className="t">
+          <thead><tr><th>Started</th><th>How</th><th>Deleted</th><th>Failed</th><th>Note</th></tr></thead>
+          <tbody>{d.runs.map((r: any) => <tr key={r.id}><td>{fmtDateTime(r.started_at)}</td>
+            <td>{({ schedule: 'Every hour', backup: 'Backup trigger', manual: 'Run now' } as any)[r.trigger] ?? r.trigger}</td>
+            <td>{r.deleted}</td><td>{r.failed ? <span className="flag">{r.failed}</span> : 0}</td><td className="small">{r.error ?? (r.finished_at ? '' : 'Running…')}</td></tr>)}
+            {d.runs.length === 0 && <tr><td colSpan={5} className="muted">No runs yet.</td></tr>}</tbody></table></div>
+        {d.problems.length > 0 && <>
+          <p className="small" style={{ marginBottom: 4 }}><b>Files that could not be deleted yet</b> — tried again on every run:</p>
+          <ul className="small">{d.problems.map((p: any) => <li key={p.id}>{p.file_name} (Job No. {p.job_no ?? p.job_number}) — {p.purge_attempts} attempt(s): {p.purge_error}</li>)}</ul>
+        </>}
+      </>}
+    </div>
+  );
+}
+
 export default function Settings() {
   const { can, reloadLookups } = useMe();
   const [data, setData] = useState<any>(null);
@@ -121,6 +160,7 @@ export default function Settings() {
       <Departments />
 
       <StorageCheck />
+      <DocumentCleanup />
 
       <div className="panel"><MasterPage entity="vehicle_types" embedded /></div>
 

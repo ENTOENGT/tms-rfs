@@ -79,7 +79,30 @@ function Reports() {
             <label className="f"><span>From</span><input type="date" value={custom[0]} onChange={(e) => setCustom([e.target.value, custom[1]])} /></label>
             <label className="f"><span>To</span><input type="date" value={custom[1]} onChange={(e) => setCustom([custom[0], e.target.value])} /></label>
           </>}
-          <label className="f"><span>Search</span><input value={f.q ?? ''} onChange={set('q')} placeholder={def?.kind === 'group' ? 'Name…' : 'Job, BOE, driver, vehicle, customer…'} /></label>
+          <label className="f"><span>Search</span><input value={f.q ?? ''} onChange={set('q')} placeholder={def?.kind === 'group' ? 'Name…' : 'Job No., BOE, driver, vehicle, customer…'} /></label>
+          {def?.kind === 'messenger' && <>
+            <label className="f"><span>Type</span><select value={f.type ?? ''} onChange={set('type')}><option value="">Truck jobs and messenger runs</option>
+              <option value="jobs">Truck jobs only</option><option value="runs">Messenger runs only</option></select></label>
+            <label className="f"><span>Job No.</span><input value={f.job_no ?? ''} onChange={set('job_no')} /></label>
+            <label className="f"><span>Request / Run No.</span><input value={f.request_no ?? ''} onChange={set('request_no')} placeholder="TR-… or MR-…" /></label>
+            <label className="f"><span>Requester</span><select value={f.requested_by ?? ''} onChange={set('requested_by')}><option value="">All</option>
+              {lk.users.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
+            {lk.departments.filter((d: any) => d.side === 'operations').length > 1 && (can('jobs.view_all') || can('runs.view_all')) &&
+              <label className="f"><span>Department</span><select value={f.department_id ?? ''} onChange={set('department_id')}><option value="">All</option>
+                {lk.departments.filter((d: any) => d.side === 'operations').map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
+            <label className="f"><span>Assigned by (Transport)</span><select value={f.assigned_by ?? ''} onChange={set('assigned_by')}><option value="">All</option>
+              {lk.users.filter((u: any) => ['transport', 'messengers'].includes(u.department)).map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
+            <label className="f"><span>Vehicle</span><select value={f.vehicle_id ?? ''} onChange={set('vehicle_id')}><option value="">All</option>
+              {lk.vehicles.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+            <label className="f"><span>Driver</span><select value={f.driver_id ?? ''} onChange={set('driver_id')}><option value="">All</option>
+              {lk.drivers.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
+            <label className="f"><span>Messenger</span><select value={f.messenger_id ?? ''} onChange={set('messenger_id')}><option value="">All</option>
+              {lk.users.filter((u: any) => u.department === 'messengers').map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
+            <label className="f"><span>Delivery location</span><input value={f.delivery ?? ''} onChange={set('delivery')} placeholder="Place or address" /></label>
+            <label className="f"><span>Status</span><select value={f.status ?? ''} onChange={set('status')}><option value="">All</option>
+              <option value="open">Not delivered yet</option><option value="delivered">Delivered</option>
+              <option value="failed">Could not complete (runs)</option><option value="cancelled">Cancelled</option></select></label>
+          </>}
           {def?.kind === 'jobs' && <>
             {can('jobs.view_all') && <label className="f"><span>Department</span><select value={f.department_id ?? ''} onChange={set('department_id')}><option value="">All</option>
               {lk.departments.filter((d: any) => d.side === 'operations').map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
@@ -114,15 +137,16 @@ function Reports() {
           <tbody>
             {shown.rows.map((r: any, i: number) => <tr key={i}>{shown.columns.map((c: any, k: number) => <td key={c.key} className={numeric(c) ? 'num' : ''}
               style={c.key === 'gross_profit' && Number(r[c.key]) < 0 ? { color: 'var(--danger)' } : undefined}>
-              {k === 0 && shown.report.kind === 'jobs' ? <b>{r[c.key]}</b> : fmt(c, r[c.key])}</td>)}</tr>)}
+              {(k === 0 && shown.report.kind === 'jobs') || (c.key === 'job_no' && shown.report.kind === 'messenger') ? <b>{r[c.key] ?? '—'}</b> : fmt(c, r[c.key])}</td>)}</tr>)}
             {shown.rows.length === 0 && <tr><td colSpan={shown.columns.length} className="muted" style={{ padding: 24, textAlign: 'center' }}>
               {isPod ? 'No PODs outstanding. 🎉' : 'Nothing matches these filters.'}</td></tr>}
           </tbody>
           {shown.totals && shown.rows.length > 0 && <tfoot><tr>{shown.columns.map((c: any, k: number) => <td key={c.key} className={numeric(c) ? 'num' : ''}
             style={{ fontWeight: 600, borderTop: '2px solid var(--line)' }}>{k === 0 ? 'Total' : shown.totals[c.key] == null ? '' : fmt(c, shown.totals[c.key])}</td>)}</tr></tfoot>}
         </table></div>
-        {!printing && shown.report.kind === 'jobs' && <div className="pager no-print">
-          <span>{data.total} row{data.total === 1 ? '' : 's'}{data.totals ? ' · totals cover all rows' : ''}</span><span className="spacer" />
+        {!printing && shown.report.kind !== 'group' && <div className="pager no-print">
+          <span>{data.total} row{data.total === 1 ? '' : 's'}{data.totals ? ' · totals cover all rows' : ''}
+            {data.summary && <> · {data.summary.truck_jobs} truck job{data.summary.truck_jobs === 1 ? '' : 's'}, {data.summary.messenger_runs} messenger run{data.summary.messenger_runs === 1 ? '' : 's'} · {data.summary.delivered} delivered, {data.summary.open} not delivered yet</>}</span><span className="spacer" />
           <button className="btn small" disabled={f.page === '1'} onClick={() => setF({ ...f, page: String(Number(f.page) - 1) })}>Previous</button>
           <span>Page {f.page} of {pages}</span>
           <button className="btn small" disabled={Number(f.page) >= pages} onClick={() => setF({ ...f, page: String(Number(f.page) + 1) })}>Next</button>

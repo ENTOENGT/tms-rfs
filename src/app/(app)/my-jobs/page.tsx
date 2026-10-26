@@ -28,7 +28,7 @@ export default function MyJobs() {
         return (
           <Link key={j.id} href={`/my-jobs/${j.id}`} className="app-card">
             <div className="app-card-head">
-              <b>{j.job_number}</b>
+              <b>{j.job_no ?? j.job_number}</b>
               <span className="badge" style={{ background: j.status_color }}>{j.status_name}</span>
               {j.priority === 'urgent' && <span className="flag">Urgent</span>}
             </div>

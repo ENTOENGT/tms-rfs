@@ -92,7 +92,7 @@ export default function Financials() {
           <label className="f"><span>Assigned by (Transport)</span><select value={f.assigned_by ?? ''} onChange={set('assigned_by')}><option value="">Anyone</option>
             {lk.users.filter((u: any) => u.department !== 'operations').map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
           <label className="f"><span>Job number / BOE</span>
-            <div style={{ display: 'flex', gap: 6 }}><input placeholder="Job" value={f.job_number ?? ''} onChange={set('job_number')} /><input placeholder="BOE" value={f.boe ?? ''} onChange={set('boe')} /></div></label>
+            <div style={{ display: 'flex', gap: 6 }}><input placeholder="Job No." value={f.job_no ?? ''} onChange={set('job_no')} /><input placeholder="BOE" value={f.boe ?? ''} onChange={set('boe')} /></div></label>
         </div>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 10 }}>
           <label className="small" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

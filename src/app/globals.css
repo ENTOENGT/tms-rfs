@@ -232,3 +232,16 @@ a.kpi:hover { background: #faf8f4; text-decoration: none; }
 .join-rules li.ok { color: var(--ok); }
 .join-rules li.ok::before { content: '✓ '; }
 .join-steps { font-size: 16px; line-height: 1.6; padding-left: 22px; }
+
+/* ---------- request form: field messages and documents ---------- */
+.ferr { display: block; color: var(--danger); margin-top: 4px; }
+.f.bad input, .f.bad select { border-color: var(--danger); }
+.docs-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 700px) { .docs-grid { grid-template-columns: 1fr; } }
+.docs-slot { border: 1px dashed var(--line); border-radius: var(--radius); padding: 10px; }
+.docs-slot-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.docs-file { display: flex; gap: 6px; align-items: center; padding: 2px 0; word-break: break-all; }
+.linkish { border: 0; background: none; color: var(--danger); cursor: pointer; padding: 0 4px; margin-left: auto; }
+.print-badge { display: inline-flex; align-items: center; gap: 4px; background: #E8F1FB; color: #1d4f86; border: 1px solid #bcd3ee; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.expired-tag { color: var(--muted); font-style: italic; }
+.docs-h { font-size: 14px; margin: 12px 16px 6px; display: flex; align-items: center; }

@@ -30,11 +30,11 @@ export default function Documents() {
       </div></div>
       {err && <div className="msg err">{err}</div>}
       <div className="panel flush"><div className="table-wrap"><table className="t">
-        <thead><tr><th>File</th><th>Type</th><th>Job</th><th>Customer</th><th>BOE</th><th>Size</th><th>Uploaded</th></tr></thead>
+        <thead><tr><th>File</th><th>Type</th><th>Job No.</th><th>Customer</th><th>BOE</th><th>Size</th><th>Uploaded</th></tr></thead>
         <tbody>
           {data?.rows.map((d: any, i: number) => <tr key={d.id}>
-            <td><FileLink files={data.rows} index={i} base={docUrl} /></td>
-            <td>{d.document_type}</td><td><Link href={`/jobs/${d.job_id}`}><b>{d.job_number}</b></Link></td>
+            <td>{d.expired ? <span className="expired-tag">{d.file_name} — expired</span> : <FileLink files={data.rows.filter((x: any) => !x.expired)} index={data.rows.filter((x: any) => !x.expired).indexOf(d)} base={docUrl} />}</td>
+            <td>{d.document_type}</td><td><Link href={`/jobs/${d.job_id}`}><b>{d.job_no ?? d.job_number}</b></Link><div className="muted small">{d.job_number}</div></td>
             <td>{d.customer_name}</td><td>{d.boe_number ?? '—'}</td><td>{fmtSize(d.size_bytes)}</td>
             <td>{d.uploaded_by_name ?? '—'} <span className="muted small">· {fmtDateTime(d.created_at)}</span></td>
           </tr>)}

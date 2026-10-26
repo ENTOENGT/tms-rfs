@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { api, fmtDate, fmtDateTime, fmtMoney, slot } from '@/components/api';
 import { useMe } from '@/components/Shell';
 import JobActions from '@/components/JobActions';
-import { DocumentsTab, NotesTab, PodCard } from '@/components/JobFiles';
+import { DocumentsTab, NotesTab, PodCard, docUrl, printFiles, tripSheetHtml } from '@/components/JobFiles';
 
 const LANE = ['pending_assignment', 'assigned', 'dispatched', 'picked_up', 'in_transit', 'delivered', 'pod_received', 'completed'];
 
@@ -111,6 +111,7 @@ export default function JobDetail({ params }: { params: { id: string } }) {
   const [job, setJob] = useState<any>(null);
   const [err, setErr] = useState('');
   const [tab, setTab] = useState('overview');
+  const [printing, setPrinting] = useState('');
   const load = (j?: any) => (j ? setJob(j) : api(`/api/jobs/${params.id}`).then(setJob).catch((e) => setErr(e.message)));
   useEffect(() => { load(); }, [params.id]);
   if (err) return <div className="page"><div className="msg err">{err}</div><Link href="/jobs">Back to jobs</Link></div>;
@@ -122,11 +123,18 @@ export default function JobDetail({ params }: { params: { id: string } }) {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>{job.job_number}</h1>
+        <h1>Job No. {job.job_no ?? job.job_number}</h1>
+        <span className="muted small">Request {job.job_number}</span>
         <span className="badge" style={{ background: job.status_color }}>{job.status_name}</span>
         {job.priority !== 'normal' && <span className="flag">{job.priority[0].toUpperCase() + job.priority.slice(1)} priority</span>}
         {podMissing && <span className="flag">Delivered, POD missing</span>}
+        {job.request_docs?.ready > 0 && <button className="print-badge" style={{ cursor: 'pointer' }} onClick={() => setTab('documents')}>
+          🖨 {job.request_docs.ready} document{job.request_docs.ready === 1 ? '' : 's'} to print</button>}
         <span className="spacer" />
+        <button className="btn small" disabled={!!printing} title="One page for the driver, followed by the trip documents"
+          onClick={() => { const docs = job.documents.filter((d: any) => d.is_request_doc && !d.expired);
+            printFiles(docs.map((d: any) => `${docUrl(d.id)}?view=1`), setPrinting, tripSheetHtml(job, docs, lk.timezone)).catch((e) => { setPrinting(''); alert(e.message); }); }}>
+          {printing || (job.request_docs?.ready ? `Print trip sheet + ${job.request_docs.ready} document${job.request_docs.ready === 1 ? '' : 's'}` : 'Print trip sheet')}</button>
         <span className="muted small">Requested by {job.requested_by_name} · {fmtDateTime(job.created_at)}</span>
       </div>
       <Lane job={job} statuses={lk.job_statuses} />
@@ -140,14 +148,15 @@ export default function JobDetail({ params }: { params: { id: string } }) {
           </div>
           {tab === 'overview' && <>
             <div className="panel"><h2>Request</h2><KV rows={[
-              ['Department', job.department_name], ['Customer', job.customer_name], ['Required', job.slot_from ? `${fmtDate(job.required_date)}, ${slot(job.slot_from, job.slot_to)}` : fmtDate(job.required_date)],
+              ['Job No.', job.job_no], ['Request No.', job.job_number], ['Department', job.department_name], ['Customer', job.customer_name], ['Required', job.slot_from ? `${fmtDate(job.required_date)}, ${slot(job.slot_from, job.slot_to)}` : fmtDate(job.required_date)],
               ['BOE number', job.boe_number], ['Customer reference', job.customer_reference], ['Email subject', job.email_subject],
               ['Shipment / booking', [job.shipment_number, job.booking_reference].filter(Boolean).join(' / ') || null],
               ['Vehicle type needed', job.requested_vehicle_type]]} /></div>
             <div className="panel"><h2>Route</h2>
               <div className="grid g2">
                 <KV rows={[['Pickup', job.pickup_name], ['Address', job.pickup_address], ['Contact', [job.pickup_contact_person, job.pickup_contact_number].filter(Boolean).join(', ') || null]]} />
-                <KV rows={[['Delivery', job.delivery_name], ['Address', job.delivery_address], ['Contact', [job.delivery_contact_person, job.delivery_contact_number].filter(Boolean).join(', ') || null]]} />
+                <KV rows={[['Delivery', job.delivery_name], ['Address', job.delivery_address], ['Contact person', job.delivery_contact_person],
+                  ['Contact number', job.delivery_contact_number && <a href={`tel:${String(job.delivery_contact_number).replace(/[^\d+]/g, '')}`}>{job.delivery_contact_number}</a>]]} />
               </div></div>
             <div className="panel"><h2>Cargo</h2><KV rows={[
               ['Description', job.cargo_description], ['Type', job.cargo_type], ['Packages', job.packages],
