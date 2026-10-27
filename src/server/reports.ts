@@ -17,7 +17,7 @@ import { jobScope } from './scope';
 type ColType = 'text' | 'date' | 'datetime' | 'money' | 'int' | 'pct';
 type Need = 'cost' | 'revenue' | 'profit';
 interface Col { key: string; label: string; type: ColType; needs?: Need; width?: number; sort?: string }
-interface ReportDef { key: string; title: string; description: string; costDescription?: string; kind: 'jobs' | 'group' | 'messenger'; cols: Col[]; group?: 'by_driver' | 'by_vehicle' | 'by_customer' | 'by_department'; podPending?: boolean; needsAny?: Need[] }
+interface ReportDef { key: string; title: string; description: string; costDescription?: string; kind: 'jobs' | 'group' | 'messenger' | 'pro'; proCharges?: boolean; cols: Col[]; group?: 'by_driver' | 'by_vehicle' | 'by_customer' | 'by_department'; podPending?: boolean; needsAny?: Need[] }
 
 const JOB_BASE: Col[] = [
   { key: 'job_no', label: 'Job No.', type: 'text', width: 14, sort: 'upper(t.job_no)' },
@@ -83,6 +83,72 @@ export const REPORTS: Record<string, ReportDef> = {
       { key: 'status_name', label: 'Status', type: 'text', width: 16, sort: 'status_sort' },
       { key: 'documents', label: 'Documents', type: 'text', width: 18 }],
   },
+  pro_register: { key: 'pro_register', title: 'PRO Request Register', kind: 'pro',
+    description: 'Every PRO clearance request: Job No., containers, BL, authorities, officer, status, deadline and completion.',
+    cols: [
+      { key: 'request_no', label: 'PRO Request No.', type: 'text', width: 14, sort: 'r.request_no' },
+      { key: 'job_no', label: 'Job No.', type: 'text', width: 14, sort: 'upper(r.job_no)' },
+      { key: 'customer_name', label: 'Customer', type: 'text', width: 22, sort: 'c.name' },
+      { key: 'container_list', label: 'Containers', type: 'text', width: 26 },
+      { key: 'bl_number', label: 'BL', type: 'text', width: 16, sort: 'r.bl_number' },
+      { key: 'authorities', label: 'Authorities', type: 'text', width: 26 },
+      { key: 'assigned_to_name', label: 'PRO officer', type: 'text', width: 16, sort: 'au.full_name' },
+      { key: 'status_name', label: 'Status', type: 'text', width: 18, sort: 's.sort_order' },
+      { key: 'deadline', label: 'Deadline', type: 'date', width: 12, sort: 'coalesce(r.deadline, r.required_date)' },
+      { key: 'completed_at', label: 'Completed', type: 'datetime', width: 17, sort: 'r.completed_at' }] },
+  pro_containers: { key: 'pro_containers', title: 'Container Clearance Report', kind: 'pro',
+    description: 'Container by container: clearance stage, Customs clearance date, pending authority, release status and delays.',
+    cols: [
+      { key: 'container_no', label: 'Container', type: 'text', width: 14, sort: 'k.container_no' },
+      { key: 'request_no', label: 'PRO Request No.', type: 'text', width: 14, sort: 'r.request_no' },
+      { key: 'job_no', label: 'Job No.', type: 'text', width: 14, sort: 'upper(r.job_no)' },
+      { key: 'customer_name', label: 'Customer', type: 'text', width: 20 },
+      { key: 'stage', label: 'Clearance stage', type: 'text', width: 18 },
+      { key: 'customs_cleared_at', label: 'Customs cleared', type: 'datetime', width: 17, sort: 'k.customs_cleared_at' },
+      { key: 'pending_authority', label: 'Pending authority', type: 'text', width: 24 },
+      { key: 'release_label', label: 'Port release', type: 'text', width: 14 },
+      { key: 'released_at', label: 'Released', type: 'datetime', width: 17, sort: 'k.released_at' },
+      { key: 'delay', label: 'Delayed', type: 'text', width: 9 },
+      { key: 'delay_reason', label: 'Delay reason', type: 'text', width: 24 }] },
+  pro_officers: { key: 'pro_officers', title: 'PRO Officer Performance', kind: 'pro',
+    description: 'Per PRO officer: requests assigned, completed, open, overdue and average days to complete.',
+    cols: [
+      { key: 'officer', label: 'PRO officer', type: 'text', width: 22, sort: 'officer' },
+      { key: 'assigned', label: 'Assigned', type: 'int', width: 10, sort: 'assigned' },
+      { key: 'completed', label: 'Completed', type: 'int', width: 11, sort: 'completed' },
+      { key: 'open', label: 'Open', type: 'int', width: 8, sort: 'open' },
+      { key: 'overdue', label: 'Overdue', type: 'int', width: 9, sort: 'overdue' },
+      { key: 'avg_days', label: 'Avg. days to complete', type: 'text', width: 14, sort: 'avg_days' }] },
+  pro_authority_pending: { key: 'pro_authority_pending', title: 'Authority Pending Report', kind: 'pro',
+    description: 'Authority activities not finished yet: reference no., submission date, what is pending, days pending, next action.',
+    cols: [
+      { key: 'authority', label: 'Authority', type: 'text', width: 24, sort: 'a.name' },
+      { key: 'activity', label: 'Activity', type: 'text', width: 24, sort: 't.sort_order' },
+      { key: 'reference_no', label: 'Reference / application no.', type: 'text', width: 18 },
+      { key: 'request_no', label: 'PRO Request No.', type: 'text', width: 14, sort: 'r.request_no' },
+      { key: 'job_no', label: 'Job No.', type: 'text', width: 14, sort: 'upper(r.job_no)' },
+      { key: 'container_no', label: 'Container', type: 'text', width: 14 },
+      { key: 'activity_status', label: 'Status', type: 'text', width: 16 },
+      { key: 'submitted_on', label: 'Submitted', type: 'date', width: 12, sort: 'x.submitted_on' },
+      { key: 'pending_requirement', label: 'Pending requirement', type: 'text', width: 28 },
+      { key: 'days_pending', label: 'Days pending', type: 'int', width: 11, sort: 'days_pending' },
+      { key: 'next_action', label: 'Next action', type: 'text', width: 26 },
+      { key: 'next_action_by', label: 'By', type: 'text', width: 16 }] },
+  pro_charges: { key: 'pro_charges', title: 'Clearance Charges Report', kind: 'pro', proCharges: true,
+    description: 'Clearance charges by Job No., container, authority and category, with payment status. Estimates are shown apart from actual charges; nothing is posted to accounts.',
+    cols: [
+      { key: 'request_no', label: 'PRO Request No.', type: 'text', width: 14, sort: 'r.request_no' },
+      { key: 'job_no', label: 'Job No.', type: 'text', width: 14, sort: 'upper(r.job_no)' },
+      { key: 'container_no', label: 'Container', type: 'text', width: 14 },
+      { key: 'authority', label: 'Authority', type: 'text', width: 22 },
+      { key: 'category', label: 'Category', type: 'text', width: 18, sort: 'g.category' },
+      { key: 'description', label: 'Description', type: 'text', width: 22 },
+      { key: 'kind', label: 'Actual / estimate', type: 'text', width: 12 },
+      { key: 'actual', label: 'Actual', type: 'money', width: 13, sort: 'g.amount' },
+      { key: 'estimate', label: 'Estimate', type: 'money', width: 13 },
+      { key: 'payment_status', label: 'Payment', type: 'text', width: 10, sort: 'g.payment_status' },
+      { key: 'paid_on', label: 'Paid on', type: 'date', width: 12 },
+      { key: 'receipt', label: 'Receipt', type: 'text', width: 20 }] },
   pod_pending: {
     key: 'pod_pending', title: 'POD pending report', kind: 'jobs', podPending: true,
     description: 'Delivered jobs still waiting for a POD (or whose POD was rejected).',
@@ -108,6 +174,7 @@ function groupReport(key: string, title: string, group: 'by_driver' | 'by_vehicl
     { key: 'margin_pct', label: 'Margin %', type: 'pct', needs: 'profit', width: 10 }] };
 }
 
+const proVisible = (a: Actor) => ['pro.view_all', 'pro.view_department', 'pro.create', 'pro.update', 'pro.assign'].some((x) => a.has(x as any));
 const can = (a: Actor, n?: Need) => !n || (n === 'cost' ? a.fin.buyingView : n === 'revenue' ? a.fin.sellingView : a.fin.profitView);
 const DATE = /^\d{4}-\d{2}-\d{2}$/, UUID = /^[0-9a-f-]{36}$/i;
 
@@ -115,6 +182,7 @@ export function reportList(actor: Actor) {
   if (!actor.has('reports.view')) throw forbidden();
   return Object.values(REPORTS)
     .filter((r) => !r.needsAny || r.needsAny.some((n) => can(actor, n)))
+    .filter((r) => r.kind !== 'pro' || (proVisible(actor) && (!r.proCharges || actor.has('pro.charges.view'))))
     .map((r) => ({ key: r.key, title: r.title, kind: r.kind,
       // Describe only what this person will actually see
       description: r.needsAny && !actor.fin.sellingView && r.costDescription ? r.costDescription : r.description }));
@@ -138,10 +206,16 @@ export async function runReport(actor: Actor, key: string, p: Record<string, str
   if (!def.podPending && (!DATE.test(p.from ?? '') || !DATE.test(p.to ?? ''))) throw bad('Choose a period');
   if (p.from && p.to && p.to < p.from) throw bad('The end date is before the start date');
   const FILTER_KEYS = ['from', 'to', 'q', 'department_id', 'customer_id', 'driver_id', 'vehicle_id', 'status',
-    'type', 'job_no', 'request_no', 'requested_by', 'assigned_by', 'messenger_id', 'delivery'];
+    'type', 'job_no', 'request_no', 'requested_by', 'assigned_by', 'messenger_id', 'delivery',
+    'container', 'authority_id', 'assigned_to', 'port', 'priority', 'payment_status'];
   const filters = Object.fromEntries(Object.entries(p).filter(([k, v]) => v && FILTER_KEYS.includes(k)));
 
   if (def.kind === 'messenger') return messengerReport(actor, def, cols, colsOut, p, opts);
+  if (def.kind === 'pro') {
+    if (!proVisible(actor) || (def.proCharges && !actor.has('pro.charges.view'))) throw forbidden();
+    const { proReport } = await import('./pro');
+    return proReport(actor, def, cols, colsOut, p, opts) as any;
+  }
 
   if (def.kind === 'group') {
     const f: any = await financials(actor, p);

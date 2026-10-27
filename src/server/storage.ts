@@ -58,7 +58,10 @@ function supabaseStore(rawUrl: string, key: string): FileStore {
   // Legacy service_role keys are JWTs (eyJ…) and go in both headers; newer sb_secret_… keys go in apikey only.
   const k = key.trim().replace(/^['"]+|['"]+$/g, '').trim();
   const headers: Record<string, string> = k.startsWith('eyJ') ? { apikey: k, Authorization: `Bearer ${k}` } : { apikey: k };
-  const bucket = () => new StorageClient(base, headers).from(BUCKET);
+  // Never let Next.js remember a storage answer: it would hand out the same signed link (valid 2 minutes)
+  // again hours later, which Supabase then rejects as expired ("exp claim timestamp check failed").
+  const noStore: typeof fetch = (input: any, init?: any) => fetch(input, { ...init, cache: 'no-store' });
+  const bucket = () => new StorageClient(base, headers, noStore).from(BUCKET);
   const fail = (what: string, e: any): never => {
     // The project address is not secret; showing it makes wrong settings obvious.
     throw new ApiError(502, 'STORAGE_ERROR', `File storage error while ${what}: ${e?.message ?? e} (storage address used: ${origin})`);

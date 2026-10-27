@@ -25,6 +25,7 @@ const NAV: { href: string; label: string; perm?: string | string[]; phase?: numb
   { href: '/reports', label: 'Reports', perm: 'reports.view' },
   { href: '/documents', label: 'Documents', perm: 'jobs.view' },
   { href: '/runs', label: 'Messenger runs', perm: ['runs.view_all', 'runs.view_department', 'runs.create', 'runs.update_status'] },
+  { href: '/pro', label: 'PRO clearance', perm: ['pro.view_all', 'pro.view_department', 'pro.create', 'pro.update', 'pro.assign'] },
 ];
 const ADMIN: { href: string; label: string; perm: string[]; phase?: number }[] = [
   { href: '/users', label: 'Users', perm: ['users.manage', 'users.manage_department'] },
@@ -46,7 +47,7 @@ function Bell({ jobHref = (id: string) => `/jobs/${id}` }: { jobHref?: (id: stri
         <div className="dropdown" onMouseLeave={() => setOpen(false)}>
           {n.rows.length === 0 && <div style={{ padding: 12 }} className="muted">You're all caught up.</div>}
           {n.rows.map((r) => (
-            <Link key={r.id} href={r.run_id ? `/runs/${r.run_id}` : r.job_id ? jobHref(r.job_id) : '#'} className={r.read_at ? '' : 'unread'} onClick={() => setOpen(false)}>
+            <Link key={r.id} href={r.pro_id ? `/pro/${r.pro_id}` : r.run_id ? `/runs/${r.run_id}` : r.job_id ? jobHref(r.job_id) : '#'} className={r.read_at ? '' : 'unread'} onClick={() => setOpen(false)}>
               {r.title}<div className="muted small">{fmtDateTime(r.created_at)}</div>
             </Link>
           ))}
@@ -69,8 +70,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       api('/api/lookups').then(setLk);
     });
   }, []);
-  const appHome = me?.app_only ? (me.permissions.includes('jobs.view_assigned') ? '/my-jobs' : '/runs') : null;
-  const appAllowed = !appHome || ['/my-jobs', '/runs', '/change-password'].some((p) => path.startsWith(p));
+  const appHome = me?.app_only ? (me.permissions.includes('jobs.view_assigned') ? '/my-jobs'
+    : me.permissions.includes('pro.update') && !me.permissions.includes('runs.update_status') ? '/pro' : '/runs') : null;
+  const appAllowed = !appHome || ['/my-jobs', '/runs', '/pro', '/change-password'].some((p) => path.startsWith(p));
   useEffect(() => { if (appHome && !appAllowed) router.replace(appHome); }, [appHome, appAllowed]);
   if (!me || !lk || !appAllowed) return <div className="page muted">Loading…</div>;
   const can = (p: string) => me.permissions.includes(p);
@@ -81,7 +83,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <div className="app-shell">
         <header className="app-top">
           <Link href={appHome} className="app-brand"><img src="/brand/mark-on-dark.png" alt="" width={30} height={28} />
-            <span>{appHome === '/my-jobs' ? 'My jobs' : 'My runs'}</span></Link>
+            <span>{appHome === '/my-jobs' ? 'My jobs' : appHome === '/pro' ? 'My PRO work' : 'My runs'}</span></Link>
           <span className="spacer" />
           <Bell jobHref={(id) => `/my-jobs/${id}`} />
           <button className="btn small" onClick={() => confirm('Sign out of the app?') && logout()}>Sign out</button>

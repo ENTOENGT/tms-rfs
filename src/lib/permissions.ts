@@ -11,9 +11,10 @@ export type Perm =
   | 'drivers.manage' | 'vehicles.manage' | 'customers.manage' | 'locations.manage'
   | 'users.manage' | 'roles.manage' | 'settings.manage' | 'audit.view'
   | 'users.manage_department' | 'roles.manage_department'
-  | 'runs.view_all' | 'runs.view_department' | 'runs.create' | 'runs.cancel' | 'runs.assign' | 'runs.update_status';
+  | 'runs.view_all' | 'runs.view_department' | 'runs.create' | 'runs.cancel' | 'runs.assign' | 'runs.update_status'
+  | 'pro.view_all' | 'pro.view_department' | 'pro.create' | 'pro.assign' | 'pro.update' | 'pro.charges.view' | 'pro.charges.edit' | 'pro.configure';
 
-export type Side = 'admin' | 'operations' | 'transport' | 'messenger' | 'finance';
+export type Side = 'admin' | 'operations' | 'transport' | 'messenger' | 'finance' | 'pro';
 
 export interface FinancialAccess {
   buyingView: boolean; buyingEdit: boolean;

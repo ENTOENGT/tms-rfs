@@ -17,9 +17,9 @@ import { ApiError, audit, bad, forbidden, notFound, one, pool, q, tx } from './d
 import type { Side } from '../lib/permissions';
 
 const UUID = /^[0-9a-f-]{36}$/i;
-const SIDES: Side[] = ['admin', 'operations', 'transport', 'messenger', 'finance'];
+const SIDES: Side[] = ['admin', 'operations', 'transport', 'messenger', 'finance', 'pro'];
 export const SIDE_LABEL: Record<Side, string> = {
-  admin: 'Administration', operations: 'Operations', transport: 'Transport', messenger: 'Messengers', finance: 'Finance',
+  admin: 'Administration', operations: 'Operations', transport: 'Transport', messenger: 'Messengers', finance: 'Finance', pro: 'PRO',
 };
 
 type Scope = { all: true } | { all: false; deptId: string; deptName: string; side: Side };
@@ -273,10 +273,10 @@ export async function setRolePermissions(actor: Actor, roleId: string, codes: un
   const asked = [...new Set(codes.filter((x): x is string => typeof x === 'string'))];
   const refused = asked.filter((x) => !mine.has(x));
   if (refused.length) throw forbidden(`You can't give: ${refused.join(', ')}`);
-  if (['transport', 'messenger'].includes(role.side)) {
+  if (['transport', 'messenger', 'pro'].includes(role.side)) {
     const commercial = new Set(perms.filter((p) => p.sensitivity === 'commercial').map((p) => p.code));
     if (asked.some((x) => commercial.has(x)))
-      throw bad('Selling price, revenue, profit and customer documents can never be given to a Transport or Messenger role.');
+      throw bad('Selling price, revenue, profit and customer documents can never be given to a Transport, Messenger or PRO role.');
   }
   await tx(async (c) => {
     const before = (await q('select permission_code c from role_permissions where role_id = $1 order by 1', [roleId], c)).map((r) => r.c);
