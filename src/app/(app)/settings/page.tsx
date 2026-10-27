@@ -15,7 +15,7 @@ const FIELDS: [string, string, string, string?][] = [
 ];
 const STAGE: Record<string, string> = { draft: 'Draft', open: 'Waiting', active: 'In progress', delivered: 'Delivered', closed: 'Closed', cancelled: 'Cancelled' };
 
-const SIDE_NAMES: Record<string, string> = { admin: 'Administration', operations: 'Operations', transport: 'Transport', messenger: 'Messengers', finance: 'Finance' };
+const SIDE_NAMES: Record<string, string> = { admin: 'Administration', operations: 'Operations', transport: 'Transport', messenger: 'Messengers', finance: 'Finance', pro: 'PRO' };
 function Departments() {
   const { reloadLookups } = useMe();
   const [rows, setRows] = useState<any[]>([]);

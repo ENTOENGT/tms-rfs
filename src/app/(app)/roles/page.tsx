@@ -3,7 +3,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { api } from '@/components/api';
 import { useMe } from '@/components/Shell';
 
-const SIDES: [string, string][] = [['operations', 'Operations'], ['transport', 'Transport'], ['messenger', 'Messengers'], ['finance', 'Finance'], ['admin', 'Administration']];
+const SIDES: [string, string][] = [['operations', 'Operations'], ['transport', 'Transport'], ['messenger', 'Messengers'], ['pro', 'PRO'], ['finance', 'Finance'], ['admin', 'Administration']];
 
 export default function Roles() {
   const { can } = useMe();
@@ -31,7 +31,7 @@ export default function Roles() {
     try { await api('/api/roles', { body: adding }); setAdding(null); setMsg({ t: 'ok', m: `Role "${adding!.name}" added. Tick its permissions below and save.` }); load(); }
     catch (e: any) { setMsg({ t: 'err', m: e.message }); }
   };
-  const blocked = (r: any, p: any) => p.sensitivity === 'commercial' && ['transport', 'messenger'].includes(r.side);
+  const blocked = (r: any, p: any) => p.sensitivity === 'commercial' && ['transport', 'messenger', 'pro'].includes(r.side);
   const modules = [...new Set(data.permissions.map((p: any) => p.module))] as string[];
   return (
     <div className="page">

@@ -17,10 +17,12 @@ function Reports() {
   const [data, setData] = useState<any>(null);
   const [printing, setPrinting] = useState<any>(null);
   const [err, setErr] = useState('');
+  const [proCfg, setProCfg] = useState<any>(null);
   const [from, to] = pkey === 'custom' ? custom : period(pkey, lk.timezone);
   const isPod = key === 'pod_pending';
   const def = list.find((r) => r.key === key);
 
+  useEffect(() => { if (def?.kind === 'pro' && !proCfg) api('/api/pro/config').then(setProCfg).catch(() => {}); }, [def?.kind]);
   useEffect(() => { api('/api/reports').then((l) => { setList(l); if (!key && l[0]) setKey(l[0].key); }).catch((e) => setErr(e.message)); }, []);
   const qs = (extra: Record<string, string> = {}) => new URLSearchParams(Object.entries({
     ...(isPod ? {} : { from, to }), ...f, ...extra }).filter(([, v]) => v)).toString();
@@ -67,7 +69,7 @@ function Reports() {
       <div className="page-head no-print"><h1>Reports</h1></div>
       <div className="no-print" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         {list.map((r) => <button key={r.key} className={`btn${r.key === key ? ' primary' : ''}`} title={r.description}
-          onClick={() => { setKey(r.key); setF({ page: '1' }); }}>{r.title.replace(' report', '')}</button>)}
+          onClick={() => { setKey(r.key); setF({ page: '1' }); }}>{r.title.replace(' report', '').replace(' Report', '')}</button>)}
       </div>
       {def && <p className="muted small no-print" style={{ marginTop: 0 }}>{def.description}</p>}
 
@@ -80,6 +82,23 @@ function Reports() {
             <label className="f"><span>To</span><input type="date" value={custom[1]} onChange={(e) => setCustom([custom[0], e.target.value])} /></label>
           </>}
           <label className="f"><span>Search</span><input value={f.q ?? ''} onChange={set('q')} placeholder={def?.kind === 'group' ? 'Name…' : 'Job No., BOE, driver, vehicle, customer…'} /></label>
+          {def?.kind === 'pro' && <>
+            <label className="f"><span>Job No.</span><input value={f.job_no ?? ''} onChange={set('job_no')} /></label>
+            <label className="f"><span>Container</span><input value={f.container ?? ''} onChange={set('container')} /></label>
+            <label className="f"><span>Customer</span><select value={f.customer_id ?? ''} onChange={set('customer_id')}><option value="">All</option>
+              {lk.customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            <label className="f"><span>Authority</span><select value={f.authority_id ?? ''} onChange={set('authority_id')}><option value="">All</option>
+              {proCfg?.authorities.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
+            <label className="f"><span>PRO officer</span><select value={f.assigned_to ?? ''} onChange={set('assigned_to')}><option value="">All</option>
+              {lk.users.filter((u: any) => u.department === 'pro').map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
+            <label className="f"><span>Port / terminal / free zone</span><input value={f.port ?? ''} onChange={set('port')} /></label>
+            <label className="f"><span>Status</span><select value={f.status ?? ''} onChange={set('status')}><option value="">All</option>
+              {proCfg?.statuses.map((x: any) => <option key={x.code} value={x.code}>{x.name}</option>)}</select></label>
+            <label className="f"><span>Priority</span><select value={f.priority ?? ''} onChange={set('priority')}><option value="">All</option>
+              <option value="normal">Normal</option><option value="urgent">Urgent</option><option value="critical">Critical</option></select></label>
+            {key === 'pro_charges' && <label className="f"><span>Payment</span><select value={f.payment_status ?? ''} onChange={set('payment_status')}><option value="">All</option>
+              <option value="unpaid">Unpaid</option><option value="paid">Paid</option><option value="waived">Waived</option></select></label>}
+          </>}
           {def?.kind === 'messenger' && <>
             <label className="f"><span>Type</span><select value={f.type ?? ''} onChange={set('type')}><option value="">Truck jobs and messenger runs</option>
               <option value="jobs">Truck jobs only</option><option value="runs">Messenger runs only</option></select></label>

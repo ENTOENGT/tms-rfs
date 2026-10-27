@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import { localPath, localWrite, verifyLocalSig } from '@/server/storage';
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';   // storage links must always be fresh
 const enabled = () => process.env.STORAGE_DRIVER === 'local' && !process.env.SUPABASE_URL;
 const check = (req: Request, action: 'put' | 'get') => {
   const u = new URL(req.url);

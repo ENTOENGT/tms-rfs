@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, fmtDateTime } from '@/components/api';
 import { useMe } from '@/components/Shell';
 
-const SIDE: Record<string, string> = { admin: 'Administration', operations: 'Operations', transport: 'Transport', messenger: 'Messengers', finance: 'Finance' };
+const SIDE: Record<string, string> = { admin: 'Administration', operations: 'Operations', transport: 'Transport', messenger: 'Messengers', finance: 'Finance', pro: 'PRO' };
 
 function UserForm({ user, data, onDone, onClose }: { user?: any; data: any; onDone: (msg: string, sendApp?: any) => void; onClose: () => void }) {
   const all = data.scope === 'all';
@@ -82,7 +82,7 @@ function UserForm({ user, data, onDone, onClose }: { user?: any; data: any; onDo
                   <option value="">From role</option><option value="grant">Always allow</option><option value="revoke">Never allow</option></select></td></tr>))}
             </tbody></table>
           </div>
-          {dept && ['transport', 'messenger'].includes(dept.side) && <p className="muted small">Selling price, revenue and profit can never be given to anyone on the {SIDE[dept.side]} side.</p>}
+          {dept && ['transport', 'messenger', 'pro'].includes(dept.side) && <p className="muted small">Selling price, revenue and profit can never be given to anyone on the {SIDE[dept.side]} side.</p>}
         </>}
         <div className="actions"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}>{user ? 'Save changes' : 'Add user'}</button></div>
       </div>
