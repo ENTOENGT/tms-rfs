@@ -337,6 +337,35 @@ hidden from Transport for viewing exactly as for downloading. `X-Frame-Options` 
   vehicle, driver, messenger, delivery location, status; sorting, counts, Excel/CSV, print. jobScope + runScope apply.
   Not captured today: a separate "transporter company" (only subcontractor, not used in the UI yet).
 
+### PRO & Container Clearance (migration 009)
+
+Separate from Messenger runs (they only carry documents). Run by the **Documentations** department: **Documentation Manager** role (Operations Manager rights +
+PRO supervision: assigns, configures, sees all PRO) and **PRO Officer** (Documentations sub-user, phone app, `app_only`).
+Permissions: pro.view_all, pro.view_department, pro.create, pro.assign, pro.update, pro.charges.view/edit (cost),
+pro.configure (admin). Defaults: Operations Manager create + view department + see charges; Operations sub-user
+create + view department; Finance view all + charges; PRO side can never get selling price (user_has_perm).
+- Tables: pro_requests (PRO-1001 + typed Job No.; links to the truck job with the same Job No.), pro_containers
+  (customs / inspection / release each tracked per container), pro_activities (many per request or container:
+  type, authority, reference no., dates, appointment, remarks, outstanding, next action/by/due, own status),
+  pro_charges (actual vs estimate, payment, receipt — never posted to accounts), pro_documents (versions:
+  replaces_id/replaced_at), pro_history (every change with who/when/remarks/attachment), configurable
+  pro_statuses, pro_authorities, pro_activity_types.
+- Rules (`src/server/pro.ts`): visibility `proScope`; officers work only their requests/activities; requesters
+  edit details, upload, send drafts and cancel before PRO starts. Customs cleared, container released and
+  Completed are separate; Completed is refused until every activity is approved/completed/not required and every
+  container released/not required. Same Job No. → warning, never blocked. Container numbers validated (ISO 6346
+  check digit → warning). Notifications on create/assign/docs required/approval/rejection/payment/customs cleared/
+  release/completion. Reminders + escalation (`runProReminders`): deadline warning, overdue escalation to PRO
+  supervisors once, appointment reminders — run by the hourly scheduled task and on app use.
+- Screens: /pro (clickable dashboard tiles + filters + list; officers get "My PRO work" cards), /pro/new, /pro/[id]
+  (clearance, request, documents with replace/versions, charges, history), /pro/containers, /pro/settings.
+- Reports: PRO Request Register, Container Clearance, PRO Officer Performance, Authority Pending, Clearance
+  Charges (needs pro.charges.view) — same filters/export/print as other reports.
+- No Customs/port/authority system is connected; updates are manual with evidence. A future integration would call
+  saveActivity / saveContainer.
+- Also in this release: storage links are never cached (StorageClient with `cache: 'no-store'` fetch) — fixes
+  "InvalidJWT exp claim" when opening/printing files the next day.
+
 ## 16. Phase status
 
 | Phase | Status |
@@ -351,5 +380,6 @@ hidden from Transport for viewing exactly as for downloading. `X-Frame-Options` 
 | Structure stage 2 — messenger runs (request, assign, collected, delivered with photo) | Done |
 | File viewer — files open on the page, Download is optional | Done |
 | Request update — Job No., delivery contact, trip documents + 30-day deletion, Messenger Report | Done |
+| PRO & Container Clearance module + file-link fix | Done |
 | Structure stage 3 — phone app (from a link) for drivers and messengers | Done |
 | 7 Email notifications · 8 Saved views, column prefs, live ops table, performance | Planned |

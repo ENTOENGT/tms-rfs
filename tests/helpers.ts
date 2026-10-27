@@ -13,6 +13,7 @@ import { createUser } from '../src/server/team';
 const HOME: Record<string, string> = {
   super_admin: 'admin', operations: 'operations', operations_manager: 'operations', transport: 'transport',
   transport_manager: 'transport', finance: 'finance', messenger: 'messengers', messenger_manager: 'messengers',
+  documentation_manager: 'documentations', pro_officer: 'documentations',
 };
 /** Create a ready-to-use user (password already changed) with a role and department. */
 export async function mkUser(by: Actor, name: string, roleCode: string, deptCode = HOME[roleCode]): Promise<Actor> {
