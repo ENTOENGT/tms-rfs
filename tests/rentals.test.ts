@@ -109,3 +109,27 @@ test('Selling side never leaks; cost only for cost viewers; report', async () =>
   assert.equal(paid.rows.length, 1); assert.equal(paid.rows[0].supplier_invoice_no, 'QH-889');
   assert.equal(JSON.stringify(rep).includes('900'), false);
 });
+
+test('Standard rental rates: per company + truck type + route; the chosen rate is kept, cost can change', async () => {
+  const rate = await createMaster(tm, 'rental_rates', { subcontractor_id: supB, vehicle_type_id: ton3, from_place: 'Jebel Ali', to_place: 'DIP', standard_cost: '380' });
+  const dup: any = await createMaster(tm, 'rental_rates', { subcontractor_id: supB, vehicle_type_id: ton3, from_place: ' jebel ali', to_place: 'dip ', standard_cost: '1' }).catch((x) => x);
+  assert.match(dup.message, /already has a rate/);
+  const lk: any = await lookups(tr);
+  assert.equal(lk.rental_rates.find((x: any) => x.id === rate.id).standard_cost, '380.00');
+  const list: any = await listMaster(tm, 'rental_rates', {});
+  assert.equal((list.rows ?? list)[0].subcontractor_name, 'Gulf Rentals');
+  // a user who doesn't see transport cost can't read the rate list
+  const noCost = await mkUser(admin, 'ops2', 'operations');
+  if (!noCost.fin.buyingView) {
+    await rejects(listMaster(noCost, 'rental_rates', {}), 'FORBIDDEN');
+    assert.equal('rental_rates' in (await lookups(noCost) as any), false);
+  }
+  // rate from another company is refused
+  const j = await newJob();
+  await rejects(rent.requestRental(tr, j.id, hire({ vehicle_number: 'FUJ 9', rate_id: rate.id })), 'VALIDATION');
+  // agreed 420 instead of the standard 380
+  const g = await rent.requestRental(tm, j.id, hire({ subcontractor_id: supB, vehicle_number: 'FUJ 9', driver_mobile: '0559990000', rate_id: rate.id, rental_cost: '420' }));
+  assert.equal(g.rentals[0].standard_cost, '380.00'); assert.equal(g.rentals[0].rental_cost, '420.00');
+  const rep: any = await runReport(tm, 'rentals', { from: D(-5), to: D(10), job_no: g.job_no });
+  assert.equal(rep.rows[0].standard_cost, '380.00'); assert.equal(rep.rows[0].rental_cost, '420.00');
+});
