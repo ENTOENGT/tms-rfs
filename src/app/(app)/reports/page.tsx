@@ -99,6 +99,13 @@ function Reports() {
             {key === 'pro_charges' && <label className="f"><span>Payment</span><select value={f.payment_status ?? ''} onChange={set('payment_status')}><option value="">All</option>
               <option value="unpaid">Unpaid</option><option value="paid">Paid</option><option value="waived">Waived</option></select></label>}
           </>}
+          {def?.kind === 'rental' && <>
+            <label className="f"><span>Rental company</span><select value={f.subcontractor_id ?? ''} onChange={set('subcontractor_id')}><option value="">All</option>
+              {lk.rental_companies?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            <label className="f"><span>Job No.</span><input value={f.job_no ?? ''} onChange={set('job_no')} /></label>
+            <label className="f"><span>Payment</span><select value={f.payment_status ?? ''} onChange={set('payment_status')}><option value="">All</option>
+              <option value="unpaid">Unpaid</option><option value="paid">Paid</option></select></label>
+          </>}
           {def?.kind === 'messenger' && <>
             <label className="f"><span>Type</span><select value={f.type ?? ''} onChange={set('type')}><option value="">Truck jobs and messenger runs</option>
               <option value="jobs">Truck jobs only</option><option value="runs">Messenger runs only</option></select></label>

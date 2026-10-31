@@ -165,7 +165,8 @@ export default function JobDetail({ params }: { params: { id: string } }) {
             <div className="panel"><h2>Assignment</h2>
               {job.driver_id || job.vehicle_id ? <KV rows={[
                 ['Driver', job.driver_name && `${job.driver_name}${job.driver_mobile ? ' · ' + job.driver_mobile : ''}`],
-                ['Vehicle', job.vehicle_number && `${job.vehicle_number} (${job.assigned_vehicle_type ?? ''})`],
+                ['Vehicle', job.vehicle_number && `${job.vehicle_number}${job.assigned_vehicle_type ? ` (${job.assigned_vehicle_type})` : ''}`],
+                ['Hired from', job.rental_company],
                 ['Planned pickup', fmtDateTime(job.planned_pickup_at)], ['ETA', fmtDateTime(job.planned_delivery_at)],
                 ['Actual pickup', fmtDateTime(job.actual_pickup_at)], ['Actual delivery', fmtDateTime(job.actual_delivery_at)],
                 ['Assigned by', job.assigned_by_name]]} />
