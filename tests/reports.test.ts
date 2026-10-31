@@ -40,8 +40,8 @@ before(async () => {
 
 test('Report list follows permissions', async () => {
   assert.deepEqual(reportList(ops).map((r) => r.key), ['operational', 'financial', 'department', 'driver', 'vehicle', 'customer', 'messenger',
-    'pro_register', 'pro_containers', 'pro_officers', 'pro_authority_pending', 'pro_charges', 'pod_pending']);
-  assert.equal(reportList(tr).length, 8, 'Transport keeps cost-only versions');
+    'pro_register', 'pro_containers', 'pro_officers', 'pro_authority_pending', 'pro_charges', 'rentals', 'pod_pending']);
+  assert.equal(reportList(tr).length, 9, 'Transport keeps cost-only versions');
   await updateUser(admin, tr.id, { overrides: [{ code: 'finance.buying.view', granted: false }] });
   const noFin = (await loadActor(tr.id))!;
   assert.deepEqual(reportList(noFin).map((r) => r.key), ['operational', 'messenger', 'pod_pending']);

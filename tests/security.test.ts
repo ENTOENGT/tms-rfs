@@ -14,7 +14,7 @@ import { createJob, getJob, listJobs, updateFinancials, dashboard } from '../src
 const SELL = '4321.99';
 let admin: Actor, ops: Actor, transport: Actor, finance: Actor, customerId: string, jobId: string;
 const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' });
-const month = { from: tomorrow.slice(0, 8) + '01', to: tomorrow.slice(0, 8) + '28' };
+const month = { from: tomorrow.slice(0, 8) + '01', to: new Date(Date.UTC(+tomorrow.slice(0, 4), +tomorrow.slice(5, 7), 0)).toISOString().slice(0, 10) };
 
 async function rejects(p: Promise<unknown>, code: string) {
   await assert.rejects(p, (e: any) => { assert.equal(e.code, code); return true; });

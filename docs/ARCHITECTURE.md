@@ -366,6 +366,15 @@ create + view department; Finance view all + charges; PRO side can never get sel
 - Also in this release: storage links are never cached (StorageClient with `cache: 'no-store'` fetch) — fixes
   "InvalidJWT exp claim" when opening/printing files the next day.
 
+### Rental trucks — hired transport (migration 010)
+When own vehicles are not available, Transport hires a truck from a rental company **per job**.
+- **Rental companies** master (`subcontractors` table, menu *Rental companies*, perm `vehicles.manage`): name (unique), contact person, number, email, TRN, address, active.
+- **Hire** (`POST /api/jobs/{id}/rental`, needs `jobs.assign_driver` + `jobs.assign_vehicle`): rental company, plate, truck type, driver name + mobile, planned pickup / ETA, rental cost (excl. VAT), "give the driver the phone app" tick, remarks. An own-fleet plate is refused. Only one hire can wait for approval per job (`jr_one_open`).
+- **Approval** (`rentals.approve`, Transport Manager): a sub-user's hire waits (manager gets a notification; Jobs list filter *Needs action → Rental awaiting approval*). A manager's own hire is approved at once. Approve creates/reuses a hired truck and hired driver (tagged with `subcontractor_id`, so they never appear in own Drivers / Vehicles lists or pickers), then assigns them through the normal `assignJob` (conflict checks, notifications, history), sets `transport_assignments.subcontractor_id`, and adds a `rental` cost line "Rental: Company — PLATE". A newer approved hire marks the older one *replaced*. Reject needs a reason; the requester can withdraw.
+- **Hired driver app — both ways:** if ticked, after approval the Send-app-link window opens for the hired driver (same one-time 7-day link as own drivers); otherwise Transport updates status and POD.
+- **Bill** (`POST /api/rentals/{id}` action `bill`, approvers or `finance.buying.edit`): rental cost, supplier invoice no., paid / unpaid, paid on. Changing the cost updates the job's rental cost line.
+- **Rental Truck Report** (`rentals`, needs cost view): filters period, rental company, Job No., payment. Rental cost and bill are shown only to people who see transport cost; selling price/profit never appear (Transport hard rule unchanged).
+
 ## 16. Phase status
 
 | Phase | Status |
