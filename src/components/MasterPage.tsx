@@ -27,7 +27,7 @@ function Form({ entity, row, onDone, onClose }: { entity: string; row: any; onDo
   });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const refs: Record<string, any[]> = { vehicle_types: lk.vehicle_types, drivers: lk.drivers, customers: lk.customers };
+  const refs: Record<string, any[]> = { vehicle_types: lk.vehicle_types, drivers: lk.drivers, customers: lk.customers, subcontractors: lk.rental_companies ?? [] };
   const save = async () => {
     setBusy(true); setErr('');
     try {

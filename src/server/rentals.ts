@@ -61,6 +61,12 @@ export async function requestRental(actor: Actor, jobId: string, b: any) {
     const sup = await one('select id, name, is_active from subcontractors where id = $1 and deleted_at is null', [b.subcontractor_id], c);
     if (!sup || !sup.is_active) throw bad('Rental company not found');
     if (b.vehicle_type_id && !(isUuid(b.vehicle_type_id) && await one('select 1 from vehicle_types where id = $1', [b.vehicle_type_id], c))) throw bad('Vehicle type not found');
+    let rate: any = null;
+    if (b.rate_id) {
+      rate = isUuid(b.rate_id) ? await one('select id, subcontractor_id, vehicle_type_id, standard_cost from rental_rates where id = $1 and deleted_at is null', [b.rate_id], c) : null;
+      if (!rate) throw bad('Rental rate not found');
+      if (rate.subcontractor_id !== sup.id) throw bad('That rate belongs to another rental company');
+    }
     const own = await one('select 1 from vehicles where upper(vehicle_number) = $1 and deleted_at is null and subcontractor_id is null', [plate], c);
     if (own) throw bad(`${plate} is one of your own vehicles — assign it normally instead of hiring.`);
     const pickup = await toInstant(b.planned_pickup_at, 'Planned pickup', c);
@@ -69,10 +75,10 @@ export async function requestRental(actor: Actor, jobId: string, b: any) {
     if (await one(`select 1 from job_rentals where job_id = $1 and status = 'requested'`, [jobId], c))
       throw new ApiError(409, 'RENTAL_PENDING', 'A rental for this job is already waiting for approval.');
     const r = await one(`insert into job_rentals (job_id, subcontractor_id, vehicle_number, vehicle_type_id, driver_name, driver_mobile,
-        planned_pickup_at, planned_delivery_at, rental_cost, send_app_link, remarks, requested_by)
-      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id`,
+        planned_pickup_at, planned_delivery_at, rental_cost, send_app_link, remarks, requested_by, rate_id, standard_cost)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
       [jobId, sup.id, plate, b.vehicle_type_id || null, String(b.driver_name).trim().slice(0, 120), String(b.driver_mobile).trim().slice(0, 40),
-       pickup, eta, cost.toFixed(2), !!b.send_app_link, b.remarks ? String(b.remarks).trim().slice(0, 500) : null, actor.id], c);
+       pickup, eta, cost.toFixed(2), !!b.send_app_link, b.remarks ? String(b.remarks).trim().slice(0, 500) : null, actor.id, rate?.id ?? null, rate?.standard_cost ?? null], c);
     await audit(c, actor, { entity_type: 'job', entity_id: jobId, job_id: jobId, action: 'Rental truck requested',
       new_value: `${sup.name} — ${plate}, driver ${String(b.driver_name).trim()}` });
     if (!canApproveRental(actor))
@@ -188,15 +194,15 @@ export async function updateRentalBill(actor: Actor, rentalId: string, b: any) {
 /** Rentals shown on the job. Cost and bill only for people who see transport cost. */
 export async function rentalsForJob(actor: Actor, jobId: string, db?: Db) {
   const rows = await q(`select jr.id, jr.status, jr.vehicle_number, vt.name vehicle_type, jr.driver_name, jr.driver_mobile, jr.planned_pickup_at,
-      jr.planned_delivery_at, jr.rental_cost, jr.send_app_link, jr.remarks, jr.reject_reason, jr.requested_at, jr.approved_at,
+      jr.planned_delivery_at, jr.rental_cost, jr.standard_cost, jr.send_app_link, jr.remarks, jr.reject_reason, jr.requested_at, jr.approved_at,
       jr.supplier_invoice_no, jr.payment_status, jr.paid_on, jr.driver_id, s.name supplier, s.contact_number supplier_phone,
       rq.full_name requested_by_name, ap.full_name approved_by_name, jr.requested_by
     from job_rentals jr join subcontractors s on s.id = jr.subcontractor_id left join vehicle_types vt on vt.id = jr.vehicle_type_id
     join users rq on rq.id = jr.requested_by left join users ap on ap.id = jr.approved_by
     where jr.job_id = $1 order by jr.requested_at desc`, [jobId], db);
   const seeCost = actor.fin.buyingView || canApproveRental(actor);
-  return rows.map(({ rental_cost, supplier_invoice_no, payment_status, paid_on, requested_by, ...x }) => ({
-    ...x, ...(seeCost ? { rental_cost, supplier_invoice_no, payment_status, paid_on } : {}),
+  return rows.map(({ rental_cost, standard_cost, supplier_invoice_no, payment_status, paid_on, requested_by, ...x }) => ({
+    ...x, ...(seeCost ? { rental_cost, standard_cost, supplier_invoice_no, payment_status, paid_on } : {}),
     can_approve: x.status === 'requested' && canApproveRental(actor),
     can_withdraw: x.status === 'requested' && requested_by === actor.id,
     can_bill: x.status === 'approved' && (canApproveRental(actor) || actor.has('finance.buying.edit')),
@@ -216,7 +222,7 @@ export async function rentalReport(actor: Actor, def: any, cols: any[], colsOut:
   const cap = opts.all ? 50000 : Math.min(Math.max(Number(p.page_size) || 100, 1), 500);
   const page = opts.all ? 1 : Math.max(Number(p.page) || 1, 1);
   const rows = await q(`select jr.planned_pickup_at trip_date, t.job_no, t.job_number, s.name supplier, jr.vehicle_number, vt.name vehicle_type,
-      jr.driver_name, jr.rental_cost, jr.supplier_invoice_no, jr.payment_status, jr.paid_on, ap.full_name approved_by_name, js.name job_status,
+      jr.driver_name, jr.standard_cost, jr.rental_cost, jr.supplier_invoice_no, jr.payment_status, jr.paid_on, ap.full_name approved_by_name, js.name job_status,
       count(*) over() _total, sum(jr.rental_cost) over() _sum, sum(case when jr.payment_status = 'unpaid' then jr.rental_cost else 0 end) over() _unpaid
     from job_rentals jr join transport_requests t on t.id = jr.job_id join job_statuses js on js.code = t.status_code
     join subcontractors s on s.id = jr.subcontractor_id left join vehicle_types vt on vt.id = jr.vehicle_type_id left join users ap on ap.id = jr.approved_by

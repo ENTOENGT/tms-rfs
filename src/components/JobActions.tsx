@@ -166,7 +166,29 @@ function RentalDialog({ job, onDone, onClose }: { job: any; onDone: (j: any) => 
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const manager = can('rentals.approve');
-  const set = (k: string) => (e: any) => { setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }); if (fe[k]) setFe({ ...fe, [k]: '' }); };
+  // standard rates for the chosen company + truck type; the one matching this job's route is picked for you
+  const allRates: any[] = lk.rental_rates ?? [];
+  const ratesFor = (sup: string, vt: string) => allRates.filter((x) => x.subcontractor_id === sup && x.vehicle_type_id === vt);
+  const norm = (v: any) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const near = (place: string, want: any) => { const a = norm(place), b = norm(want); return !!a && !!b && (a.includes(b) || b.includes(a)); };
+  const bestRate = (list: any[]) => {
+    const from = [job.pickup_name, job.pickup_address, job.pickup_emirate], to = [job.delivery_name, job.delivery_address, job.delivery_emirate];
+    return list.find((x) => from.some((p) => near(x.from_place, p)) && to.some((p) => near(x.to_place, p))) ?? (list.length === 1 ? list[0] : null);
+  };
+  const withRate = (next: any) => {
+    const list = ratesFor(next.subcontractor_id, next.vehicle_type_id);
+    const pick = bestRate(list);
+    return { ...next, rate_id: pick?.id ?? '', rental_cost: pick ? String(pick.standard_cost) : (next.rate_id ? '' : next.rental_cost) };
+  };
+  const set = (k: string) => (e: any) => {
+    const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    let next = { ...f, [k]: v };
+    if (k === 'subcontractor_id' || k === 'vehicle_type_id') next = withRate(next);
+    if (k === 'rate_id') { const x = allRates.find((y) => y.id === v); next.rental_cost = x ? String(x.standard_cost) : ''; }
+    setF(next); if (fe[k]) setFe({ ...fe, [k]: '' });
+  };
+  const rates = ratesFor(f.subcontractor_id, f.vehicle_type_id);
+  const chosen = allRates.find((x) => x.id === f.rate_id);
   const save = async (override = false) => {
     setBusy(true); setErr('');
     try { onDone(await api(`/api/jobs/${job.id}/rental`, { body: { ...f, override_conflicts: override } })); }
@@ -192,7 +214,12 @@ function RentalDialog({ job, onDone, onClose }: { job: any; onDone: (j: any) => 
           <label className={`f${fe.driver_mobile ? ' bad' : ''}`}><span>Driver mobile <em>*</em></span><input type="tel" value={f.driver_mobile ?? ''} onChange={set('driver_mobile')} placeholder="050 123 4567" /><E k="driver_mobile" /></label>
           <label className={`f${fe.planned_pickup_at ? ' bad' : ''}`}><span>Planned pickup <em>*</em></span><input type="datetime-local" value={f.planned_pickup_at} onChange={set('planned_pickup_at')} /><E k="planned_pickup_at" /></label>
           <label className="f"><span>Delivery ETA</span><input type="datetime-local" value={f.planned_delivery_at ?? ''} onChange={set('planned_delivery_at')} /></label>
-          <label className={`f${fe.rental_cost ? ' bad' : ''}`}><span>Rental cost ({lk.currency}, excl. VAT) <em>*</em></span><input type="number" min="0" step="0.01" value={f.rental_cost ?? ''} onChange={set('rental_cost')} /><E k="rental_cost" /></label>
+          {f.subcontractor_id && f.vehicle_type_id && <label className="f span2"><span>Standard rate (route)</span>
+            <select value={f.rate_id ?? ''} onChange={set('rate_id')}>
+              <option value="">{rates.length ? 'Not on the rate list — enter the cost' : 'No standard rate for this company and truck type — enter the cost'}</option>
+              {rates.map((x: any) => <option key={x.id} value={x.id}>{x.from_place} → {x.to_place} — {fmtMoney(x.standard_cost, lk.currency)}</option>)}</select></label>}
+          <label className={`f${fe.rental_cost ? ' bad' : ''}`}><span>Rental cost ({lk.currency}, excl. VAT) <em>*</em></span><input type="number" min="0" step="0.01" value={f.rental_cost ?? ''} onChange={set('rental_cost')} />
+            {chosen && Number(f.rental_cost) !== Number(chosen.standard_cost) && f.rental_cost !== '' && <small className="muted">Changed from the standard {fmtMoney(chosen.standard_cost, lk.currency)}</small>}<E k="rental_cost" /></label>
           <label className="f"><span>Remarks</span><input value={f.remarks ?? ''} onChange={set('remarks')} placeholder="e.g. Own 3-ton trucks all booked" /></label>
           <label className="small span2" style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" style={{ width: 'auto' }} checked={f.send_app_link} onChange={set('send_app_link')} />
             Give this driver the phone app for this job (otherwise Transport updates the status and POD)</label>
@@ -240,7 +267,7 @@ function RentalPanel({ job, onChange }: { job: any; onChange: (j: any) => void }
         <dl className="kv" style={{ marginTop: 6 }}>
           <dt>Driver</dt><dd>{x.driver_name} · <a href={`tel:${String(x.driver_mobile).replace(/[^\d+]/g, '')}`}>{x.driver_mobile}</a>{x.send_app_link ? ' · phone app' : ' · Transport updates the job'}</dd>
           <dt>Planned</dt><dd>{fmtDateTime(x.planned_pickup_at)}{x.planned_delivery_at ? ` → ${fmtDateTime(x.planned_delivery_at)}` : ''}</dd>
-          {x.rental_cost !== undefined && <><dt>Rental cost</dt><dd><b>{fmtMoney(x.rental_cost, lk.currency)}</b>{x.status === 'approved' && <> · {x.payment_status === 'paid' ? `Paid ${x.paid_on ?? ''}` : 'Unpaid'}{x.supplier_invoice_no ? ` · invoice ${x.supplier_invoice_no}` : ''}</>}</dd></>}
+          {x.rental_cost !== undefined && <><dt>Rental cost</dt><dd><b>{fmtMoney(x.rental_cost, lk.currency)}</b>{x.standard_cost != null && Number(x.standard_cost) !== Number(x.rental_cost) && <span className="muted"> (standard {fmtMoney(x.standard_cost, lk.currency)})</span>}{x.status === 'approved' && <> · {x.payment_status === 'paid' ? `Paid ${x.paid_on ?? ''}` : 'Unpaid'}{x.supplier_invoice_no ? ` · invoice ${x.supplier_invoice_no}` : ''}</>}</dd></>}
           <dt>Requested</dt><dd>{x.requested_by_name}, {fmtDateTime(x.requested_at)}{x.approved_by_name ? ` · ${x.status === 'approved' ? 'approved' : 'answered'} by ${x.approved_by_name}` : ''}</dd>
           {x.remarks && <><dt>Remarks</dt><dd>{x.remarks}</dd></>}
           {x.reject_reason && <><dt>Reason</dt><dd>{x.reject_reason}</dd></>}

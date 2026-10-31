@@ -20,6 +20,7 @@ const NAV: { href: string; label: string; perm?: string | string[]; phase?: numb
   { href: '/drivers', label: 'Drivers', perm: 'jobs.view' },
   { href: '/vehicles', label: 'Vehicles', perm: 'jobs.view' },
   { href: '/subcontractors', label: 'Rental companies', perm: 'vehicles.manage' },
+  { href: '/rental_rates', label: 'Rental rates', perm: 'vehicles.manage' },
   { href: '/customers', label: 'Customers', perm: 'jobs.view' },
   { href: '/locations', label: 'Locations', perm: 'jobs.view' },
   { href: '/financials', label: 'Financials', perm: ['finance.buying.view', 'finance.selling.view'] },

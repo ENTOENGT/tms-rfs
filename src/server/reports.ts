@@ -159,6 +159,7 @@ export const REPORTS: Record<string, ReportDef> = {
       { key: 'vehicle_number', label: 'Truck', type: 'text', width: 12 },
       { key: 'vehicle_type', label: 'Type', type: 'text', width: 10 },
       { key: 'driver_name', label: 'Driver', type: 'text', width: 16 },
+      { key: 'standard_cost', label: 'Standard rate', type: 'money', width: 13, needs: 'cost' },
       { key: 'rental_cost', label: 'Rental cost', type: 'money', width: 13, sort: 'jr.rental_cost', needs: 'cost' },
       { key: 'supplier_invoice_no', label: 'Supplier invoice', type: 'text', width: 16 },
       { key: 'payment_status', label: 'Payment', type: 'text', width: 10, sort: 'jr.payment_status' },

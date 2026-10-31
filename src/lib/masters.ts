@@ -6,7 +6,7 @@ export type FieldType = 'text' | 'longtext' | 'email' | 'phone' | 'date' | 'numb
 export interface MasterField {
   key: string; label: string; type: FieldType; required?: boolean; max?: number;
   options?: { value: string; label: string }[];
-  ref?: 'vehicle_types' | 'drivers' | 'customers';   // dropdown source (from /api/lookups)
+  ref?: 'vehicle_types' | 'drivers' | 'customers' | 'subcontractors';   // dropdown source (from /api/lookups)
   list?: boolean;          // show as a column in the table
   expiry?: boolean;        // highlight when expired / expiring soon
   half?: boolean;          // half-width in the form
@@ -18,6 +18,7 @@ export interface MasterDef {
   joins?: string; joinCols?: string;       // server-side display columns
   display?: Record<string, string>;        // field key -> display column from join
   blurb: string;
+  costly?: boolean;                        // holds transport cost: only cost viewers and managers may list it
 }
 
 const EMIRATES = ['Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman', 'Umm Al Quwain', 'Ras Al Khaimah', 'Fujairah']
@@ -83,6 +84,24 @@ export const MASTERS: Record<string, MasterDef> = {
       { key: 'trn', label: 'TRN', type: 'text', list: true, max: 30, half: true },
       { key: 'address', label: 'Address', type: 'text', max: 300 },
       { key: 'is_active', label: 'In use', type: 'bool', list: true },
+      { key: 'remarks', label: 'Remarks', type: 'longtext', max: 1000 },
+    ],
+  },
+  rental_rates: {
+    key: 'rental_rates', table: 'rental_rates', title: 'Rental rates', singular: 'rental rate', perm: 'vehicles.manage',
+    softDelete: true, activeField: 'is_active', orderBy: 's.name, vt.name, e.from_place, e.to_place', costly: true,
+    search: ['s.name', 'vt.name', 'e.from_place', 'e.to_place'],
+    joins: 'join subcontractors s on s.id = e.subcontractor_id join vehicle_types vt on vt.id = e.vehicle_type_id',
+    joinCols: 's.name subcontractor_name, vt.name vehicle_type_name',
+    display: { subcontractor_id: 'subcontractor_name', vehicle_type_id: 'vehicle_type_name' },
+    blurb: 'Standard price each rental company charges per truck type and route. When you hire a truck, the matching rate fills in the cost — you can still change it.',
+    fields: [
+      { key: 'subcontractor_id', label: 'Rental company', type: 'ref', ref: 'subcontractors', required: true, list: true, half: true },
+      { key: 'vehicle_type_id', label: 'Truck type', type: 'ref', ref: 'vehicle_types', required: true, list: true, half: true },
+      { key: 'from_place', label: 'From', type: 'text', required: true, list: true, max: 120, half: true },
+      { key: 'to_place', label: 'To', type: 'text', required: true, list: true, max: 120, half: true },
+      { key: 'standard_cost', label: 'Standard cost (AED, excl. VAT)', type: 'number', required: true, list: true, half: true },
+      { key: 'is_active', label: 'In use', type: 'bool', list: true, half: true },
       { key: 'remarks', label: 'Remarks', type: 'longtext', max: 1000 },
     ],
   },

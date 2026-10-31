@@ -48,6 +48,10 @@ export async function lookups(actor: Actor) {
     currency: await getSetting('currency', 'AED'),
     timezone: await getSetting('timezone', 'Asia/Dubai'),
   };
+  if (actor.fin.buyingView || actor.has('rentals.approve') || actor.has('vehicles.manage'))
+    out.rental_rates = await q(`select r.id, r.subcontractor_id, r.vehicle_type_id, r.from_place, r.to_place, r.standard_cost
+      from rental_rates r join subcontractors s on s.id = r.subcontractor_id
+      where r.deleted_at is null and r.is_active and s.deleted_at is null order by r.from_place, r.to_place`);
   if (actor.fin.buyingView) out.expense_types = await q('select code, name from expense_types where is_active order by sort_order');
   if (actor.fin.sellingView) {
     out.revenue_types = await q('select code, name from revenue_types where is_active order by sort_order');

@@ -58,6 +58,7 @@ async function checkRefs(d: MasterDef, values: Record<string, unknown>) {
 export async function listMaster(actor: Actor, key: string, p: Record<string, string>) {
   const d = def(key);
   if (!actor.has('jobs.view') && !actor.has(d.perm)) throw forbidden();
+  if (d.costly && !actor.has(d.perm) && !actor.fin.buyingView) throw forbidden();
   const params: unknown[] = [];
   let where = d.softDelete ? 'where e.deleted_at is null' : 'where true';
   if (p.q?.trim()) {
@@ -93,6 +94,7 @@ const dupMessages: Record<string, string> = {
   customers_code_key: 'A customer with this code already exists',
   customers_name_uq: 'A customer with this name already exists',
   subcontractors_name_uq: 'A rental company with this name already exists',
+  rental_rates_uq: 'This company already has a rate for this truck type and route',
   vehicle_types_name_key: 'A vehicle type with this name already exists',
 };
 function mapDup(e: any): never {
