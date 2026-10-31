@@ -17,7 +17,7 @@ import { jobScope } from './scope';
 type ColType = 'text' | 'date' | 'datetime' | 'money' | 'int' | 'pct';
 type Need = 'cost' | 'revenue' | 'profit';
 interface Col { key: string; label: string; type: ColType; needs?: Need; width?: number; sort?: string }
-interface ReportDef { key: string; title: string; description: string; costDescription?: string; kind: 'jobs' | 'group' | 'messenger' | 'pro'; proCharges?: boolean; cols: Col[]; group?: 'by_driver' | 'by_vehicle' | 'by_customer' | 'by_department'; podPending?: boolean; needsAny?: Need[] }
+interface ReportDef { key: string; title: string; description: string; costDescription?: string; kind: 'jobs' | 'group' | 'messenger' | 'pro' | 'rental'; proCharges?: boolean; cols: Col[]; group?: 'by_driver' | 'by_vehicle' | 'by_customer' | 'by_department'; podPending?: boolean; needsAny?: Need[] }
 
 const JOB_BASE: Col[] = [
   { key: 'job_no', label: 'Job No.', type: 'text', width: 14, sort: 'upper(t.job_no)' },
@@ -149,6 +149,22 @@ export const REPORTS: Record<string, ReportDef> = {
       { key: 'payment_status', label: 'Payment', type: 'text', width: 10, sort: 'g.payment_status' },
       { key: 'paid_on', label: 'Paid on', type: 'date', width: 12 },
       { key: 'receipt', label: 'Receipt', type: 'text', width: 20 }] },
+  rentals: { key: 'rentals', title: 'Rental Truck Report', kind: 'rental', needsAny: ['cost'],
+    description: 'Every approved rental truck: supplier, truck, driver, rental cost, supplier invoice and paid / unpaid.',
+    cols: [
+      { key: 'trip_date', label: 'Trip date', type: 'datetime', width: 17, sort: 'jr.planned_pickup_at' },
+      { key: 'job_no', label: 'Job No.', type: 'text', width: 14, sort: 'upper(t.job_no)' },
+      { key: 'job_number', label: 'Request No.', type: 'text', width: 12 },
+      { key: 'supplier', label: 'Rental company', type: 'text', width: 22, sort: 's.name' },
+      { key: 'vehicle_number', label: 'Truck', type: 'text', width: 12 },
+      { key: 'vehicle_type', label: 'Type', type: 'text', width: 10 },
+      { key: 'driver_name', label: 'Driver', type: 'text', width: 16 },
+      { key: 'rental_cost', label: 'Rental cost', type: 'money', width: 13, sort: 'jr.rental_cost', needs: 'cost' },
+      { key: 'supplier_invoice_no', label: 'Supplier invoice', type: 'text', width: 16 },
+      { key: 'payment_status', label: 'Payment', type: 'text', width: 10, sort: 'jr.payment_status' },
+      { key: 'paid_on', label: 'Paid on', type: 'date', width: 12 },
+      { key: 'job_status', label: 'Job status', type: 'text', width: 14 },
+      { key: 'approved_by_name', label: 'Approved by', type: 'text', width: 16 }] },
   pod_pending: {
     key: 'pod_pending', title: 'POD pending report', kind: 'jobs', podPending: true,
     description: 'Delivered jobs still waiting for a POD (or whose POD was rejected).',
@@ -207,10 +223,14 @@ export async function runReport(actor: Actor, key: string, p: Record<string, str
   if (p.from && p.to && p.to < p.from) throw bad('The end date is before the start date');
   const FILTER_KEYS = ['from', 'to', 'q', 'department_id', 'customer_id', 'driver_id', 'vehicle_id', 'status',
     'type', 'job_no', 'request_no', 'requested_by', 'assigned_by', 'messenger_id', 'delivery',
-    'container', 'authority_id', 'assigned_to', 'port', 'priority', 'payment_status'];
+    'container', 'authority_id', 'assigned_to', 'port', 'priority', 'payment_status', 'subcontractor_id'];
   const filters = Object.fromEntries(Object.entries(p).filter(([k, v]) => v && FILTER_KEYS.includes(k)));
 
   if (def.kind === 'messenger') return messengerReport(actor, def, cols, colsOut, p, opts);
+  if (def.kind === 'rental') {
+    const { rentalReport } = await import('./rentals');
+    return rentalReport(actor, def, cols, colsOut, p, opts) as any;
+  }
   if (def.kind === 'pro') {
     if (!proVisible(actor) || (def.proCharges && !actor.has('pro.charges.view'))) throw forbidden();
     const { proReport } = await import('./pro');

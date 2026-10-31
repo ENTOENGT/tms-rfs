@@ -77,9 +77,9 @@ export default function JobList({ mode }: { mode: 'requests' | 'jobs' }) {
           <label className="f"><span>Required from</span><input type="date" value={f.date_from ?? ''} onChange={set('date_from')} /></label>
           <label className="f"><span>Required to</span><input type="date" value={f.date_to ?? ''} onChange={set('date_to')} /></label>
           <label className="f"><span>BOE number</span><input value={f.boe ?? ''} onChange={set('boe')} /></label>
-          <label className="f"><span>POD</span>
+          <label className="f"><span>Needs action</span>
             <select value={f.action_required} onChange={set('action_required')}>
-              <option value="">Any</option><option value="pod">Delivered, POD missing</option>
+              <option value="">Any</option><option value="pod">Delivered, POD missing</option><option value="rental">Rental awaiting approval</option>
             </select></label>
           {fin.sellingView && <>
             <label className="f"><span>Revenue from</span><input type="number" min="0" value={f.revenue_min ?? ''} onChange={set('revenue_min')} /></label>
@@ -115,7 +115,7 @@ export default function JobList({ mode }: { mode: 'requests' | 'jobs' }) {
                     {manyDepts && <td>{j.department_name ?? '—'}</td>}
                     <td>{fmtDate(j.required_date)}</td><td>{slot(j.slot_from, j.slot_to)}</td><td>{j.customer_name}</td>
                     <td>{j.boe_number ?? '—'}</td><td>{j.pickup_name}</td><td>{j.delivery_name}</td>
-                    <td>{j.vehicle_number ?? <span className="muted">{j.requested_vehicle_type ?? '—'}</span>}</td>
+                    <td>{j.vehicle_number ?? <span className="muted">{j.requested_vehicle_type ?? '—'}</span>}{j.rental_company && <div className="muted small">Hired · {j.rental_company}</div>}{j.rental_pending && <div className="small" style={{ color: '#B7791F' }}>Rental awaiting approval</div>}</td>
                     <td>{j.driver_name ?? <span className="muted">Unassigned</span>}</td>
                     <td><span className="badge" style={{ background: j.status_color }}>{j.status_name}</span></td>
                     {fin.sellingView && <td className="num">{fmtMoney(j.financials.commercial?.net_revenue, lk.currency)}</td>}

@@ -34,7 +34,7 @@ const BASE_SELECT = `
   a.driver_id, dr.full_name driver_name, dr.mobile driver_mobile,
   a.vehicle_id, ve.vehicle_number, a.vehicle_type_id assigned_vehicle_type_id, avt.name assigned_vehicle_type,
   a.planned_pickup_at, a.planned_delivery_at, a.actual_pickup_at, a.actual_delivery_at,
-  a.assigned_at, au.full_name assigned_by_name`;
+  a.assigned_at, au.full_name assigned_by_name, sub.name rental_company`;
 
 const BASE_FROM = `
   from transport_requests t
@@ -48,7 +48,8 @@ const BASE_FROM = `
   left join drivers dr on dr.id = a.driver_id
   left join vehicles ve on ve.id = a.vehicle_id
   left join vehicle_types avt on avt.id = a.vehicle_type_id
-  left join users au on au.id = a.assigned_by`;
+  left join users au on au.id = a.assigned_by
+  left join subcontractors sub on sub.id = a.subcontractor_id`;
 
 const COST_JOIN = `left join lateral (select coalesce(sum(amount),0) total_cost from job_cost_lines where job_id = t.id) cost on true`;
 const COMM_JOIN = `left join job_commercials jc on jc.job_id = t.id
@@ -125,6 +126,7 @@ export async function listJobs(actor: Actor, f: JobListQuery) {
   if (f.vehicle_id) where += ` and a.vehicle_id = ${add(f.vehicle_id)}`;
   if (f.requested_by) where += ` and t.requested_by = ${add(f.requested_by)}`;
   if (f.department_id) where += ` and t.department_id = ${add(f.department_id)}`;
+  if (f.action_required === 'rental') where += ` and exists (select 1 from job_rentals jr where jr.job_id = t.id and jr.status = 'requested')`;
   if (f.action_required === 'pod') where += ` and s.stage = 'delivered' and t.pod_status in ('pending','rejected')`;
   if (f.revenue_min) where += ` and (rev.gross - coalesce(jc.discount,0)) >= ${add(f.revenue_min)}`;
   if (f.revenue_max) where += ` and (rev.gross - coalesce(jc.discount,0)) <= ${add(f.revenue_max)}`;
@@ -139,6 +141,7 @@ export async function listJobs(actor: Actor, f: JobListQuery) {
       ${fin.sellingView ? ', rev.gross, jc.discount, jc.vat_rate, jc.payment_status' : ''}
       , (select count(*)::int from job_documents rd join document_types rdt on rdt.code = rd.document_type_code
         where rd.job_id = t.id and rd.deleted_at is null and rd.purged_at is null and rdt.is_request_doc) docs_ready
+      , (select status from job_rentals jr where jr.job_id = t.id and jr.status = 'requested' limit 1) rental_pending
       , count(*) over() _total
     ${BASE_FROM}
     ${fin.buyingView ? COST_JOIN : ''}
@@ -147,7 +150,7 @@ export async function listJobs(actor: Actor, f: JobListQuery) {
     order by ${sort.sql} ${dir} nulls last, t.job_number desc
     limit ${size} offset ${(page - 1) * size}`;
   const rows = await q(sql, p);
-  return { total: Number(rows[0]?._total ?? 0), page, page_size: size, rows: rows.map((r) => ({ ...toJobDTO(r, actor), docs_ready: r.docs_ready })) };
+  return { total: Number(rows[0]?._total ?? 0), page, page_size: size, rows: rows.map((r) => ({ ...toJobDTO(r, actor), docs_ready: r.docs_ready, rental_pending: !!r.rental_pending })) };
 }
 
 export async function getJob(actor: Actor, id: string) {
@@ -227,6 +230,13 @@ export async function getJob(actor: Actor, id: string) {
       .map((t) => ({ code: t.code, name: t.name, is_request_doc: t.is_request_doc })),
     add_note: stage !== 'cancelled', ...(fin.sellingView ? { add_commercial_note: true } : {}),
   };
+  // rental trucks (hired transport): Transport, managers who approve, and anyone who sees transport cost
+  if (actor.has('jobs.assign_driver') || actor.has('rentals.approve') || fin.buyingView || actor.isSuperAdmin) {
+    const { rentalsForJob, canRequestRental } = await import('./rentals');
+    job.rentals = await rentalsForJob(actor, id);
+    job.permissions.hire_rental = canRequestRental(actor) && ['requested', 'pending_assignment', 'assigned', 'confirmed'].includes(row.status_code)
+      && !job.rentals.some((x: any) => x.status === 'requested');
+  }
   job.next_statuses = locked ? [] : await allowedTransitions(actor, row);
   return job;
 }

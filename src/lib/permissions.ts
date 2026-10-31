@@ -12,6 +12,7 @@ export type Perm =
   | 'users.manage' | 'roles.manage' | 'settings.manage' | 'audit.view'
   | 'users.manage_department' | 'roles.manage_department'
   | 'runs.view_all' | 'runs.view_department' | 'runs.create' | 'runs.cancel' | 'runs.assign' | 'runs.update_status'
+  | 'rentals.approve'
   | 'pro.view_all' | 'pro.view_department' | 'pro.create' | 'pro.assign' | 'pro.update' | 'pro.charges.view' | 'pro.charges.edit' | 'pro.configure';
 
 export type Side = 'admin' | 'operations' | 'transport' | 'messenger' | 'finance' | 'pro';

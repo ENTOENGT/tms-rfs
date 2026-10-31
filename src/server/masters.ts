@@ -64,6 +64,7 @@ export async function listMaster(actor: Actor, key: string, p: Record<string, st
     params.push('%' + p.q.trim().replace(/[%_\\]/g, '\\$&') + '%');
     where += ` and concat_ws(' ', ${d.search.join(', ')}) ilike $${params.length}`;
   }
+  if (key === 'drivers' || key === 'vehicles') where += ' and e.subcontractor_id is null';   // hired trucks live on the rental, not the own fleet
   if (p.active === '1') where += d.activeField === 'is_active' ? ' and e.is_active' : ` and e.status <> 'inactive'`;
   const size = Math.min(Math.max(Number(p.page_size) || 50, 1), 500);
   const page = Math.max(Number(p.page) || 1, 1);
@@ -91,6 +92,7 @@ const dupMessages: Record<string, string> = {
   drivers_driver_code_key: 'A driver with this Driver ID already exists',
   customers_code_key: 'A customer with this code already exists',
   customers_name_uq: 'A customer with this name already exists',
+  subcontractors_name_uq: 'A rental company with this name already exists',
   vehicle_types_name_key: 'A vehicle type with this name already exists',
 };
 function mapDup(e: any): never {

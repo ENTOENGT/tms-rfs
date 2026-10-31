@@ -39,7 +39,7 @@ function windowSql(pickup: number, delivery: number) {
   return `tstzrange($${pickup}::timestamptz, greatest(coalesce($${delivery}::timestamptz, $${pickup}::timestamptz + interval '4 hours'),
           $${pickup}::timestamptz + interval '1 minute'), '[)')`;
 }
-async function toInstant(local: unknown, label: string, db?: Db): Promise<string | null> {
+export async function toInstant(local: unknown, label: string, db?: Db): Promise<string | null> {
   if (local === undefined || local === null || local === '') return null;
   if (typeof local !== 'string' || !LOCAL_DT.test(local)) throw bad(`${label} is invalid`);
   const tz = await getSetting<string>('timezone', 'Asia/Dubai', db);
@@ -62,11 +62,11 @@ export async function availability(actor: Actor, p: Record<string, string>) {
        and ($3::uuid is null or a.job_id <> $3) and a.busy_window && ${windowSql(1, 2)}), '[]')`;
   const drivers = await q(`select e.id, e.full_name, e.mobile, e.status, e.license_expiry, e.visa_expiry,
       ${busy('driver_id')} conflicts
-    from drivers e where e.deleted_at is null and e.status <> 'inactive' order by e.full_name`, [from, to, exclude]);
+    from drivers e where e.deleted_at is null and e.status <> 'inactive' and e.subcontractor_id is null order by e.full_name`, [from, to, exclude]);
   const vehicles = await q(`select e.id, e.vehicle_number, e.status, e.vehicle_type_id, vt.name vehicle_type, e.weight_capacity_kg,
       e.volume_capacity_cbm, e.registration_expiry, e.insurance_expiry, e.default_driver_id, ${busy('vehicle_id')} conflicts
     from vehicles e left join vehicle_types vt on vt.id = e.vehicle_type_id
-    where e.deleted_at is null and e.status <> 'inactive' order by vt.sort_order, e.vehicle_number`, [from, to, exclude]);
+    where e.deleted_at is null and e.status <> 'inactive' and e.subcontractor_id is null order by vt.sort_order, e.vehicle_number`, [from, to, exclude]);
   const expired = (d: string | null) => !!d && d < day;
   return {
     drivers: drivers.map((d) => ({ ...d, blocked: BLOCKED_DRIVER.includes(d.status) || expired(d.license_expiry) || expired(d.visa_expiry) })),

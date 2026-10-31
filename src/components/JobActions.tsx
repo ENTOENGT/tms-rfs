@@ -1,8 +1,9 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { api, fmtDate } from './api';
+import { api, fmtDate, fmtDateTime, fmtMoney } from './api';
 import { useMe } from './Shell';
+import SendAppLink from './SendAppLink';
 
 /** ISO instant -> "YYYY-MM-DDTHH:MM" in the company timezone, for datetime-local inputs. */
 export function toLocalInput(iso: string | null | undefined, tz: string) {
@@ -156,6 +157,116 @@ function StatusDialog({ job, to, onDone, onClose }: { job: any; to: any; onDone:
   );
 }
 
+/** Hire a rental truck when own vehicles are not available. */
+function RentalDialog({ job, onDone, onClose }: { job: any; onDone: (j: any) => void; onClose: () => void }) {
+  const { lk, can } = useMe();
+  const [f, setF] = useState<any>({ planned_pickup_at: toLocalInput(job.planned_pickup_at, lk.timezone) || (job.required_date ? `${job.required_date}T${(job.slot_from ?? '09:00').slice(0, 5)}` : ''),
+    vehicle_type_id: job.requested_vehicle_type_id ?? '', send_app_link: false });
+  const [fe, setFe] = useState<Record<string, string>>({});
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const manager = can('rentals.approve');
+  const set = (k: string) => (e: any) => { setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }); if (fe[k]) setFe({ ...fe, [k]: '' }); };
+  const save = async (override = false) => {
+    setBusy(true); setErr('');
+    try { onDone(await api(`/api/jobs/${job.id}/rental`, { body: { ...f, override_conflicts: override } })); }
+    catch (e: any) { setErr(e.message); if (e.details?.fields) setFe(e.details.fields); setBusy(false); }
+  };
+  const E = ({ k }: { k: string }) => (fe[k] ? <small className="ferr">{fe[k]}</small> : null);
+  return (
+    <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" role="dialog" aria-label="Hire rental truck" style={{ width: 'min(720px, 100%)' }}>
+        <h2>Hire rental truck — Job No. {job.job_no ?? job.job_number}</h2>
+        <p className="muted small" style={{ marginTop: 0 }}>For when your own vehicles are not available. {manager
+          ? 'As Transport Manager, your hire is approved straight away.' : 'The Transport Manager approves it before it is used.'}</p>
+        {err && <div className="msg err">{err}</div>}
+        {lk.rental_companies?.length === 0 && <div className="msg warn">No rental companies yet. Add them under <b>Rental companies</b> first.</div>}
+        <div className="grid g2">
+          <label className={`f span2${fe.subcontractor_id ? ' bad' : ''}`}><span>Rental company <em>*</em></span>
+            <select value={f.subcontractor_id ?? ''} onChange={set('subcontractor_id')}><option value="">Choose…</option>
+              {lk.rental_companies?.map((c: any) => <option key={c.id} value={c.id}>{c.name}{c.contact_number ? ` · ${c.contact_number}` : ''}</option>)}</select><E k="subcontractor_id" /></label>
+          <label className={`f${fe.vehicle_number ? ' bad' : ''}`}><span>Truck plate <em>*</em></span><input value={f.vehicle_number ?? ''} onChange={set('vehicle_number')} placeholder="e.g. DXB 54321" /><E k="vehicle_number" /></label>
+          <label className="f"><span>Truck type</span><select value={f.vehicle_type_id} onChange={set('vehicle_type_id')}><option value="">—</option>
+            {lk.vehicle_types.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+          <label className={`f${fe.driver_name ? ' bad' : ''}`}><span>Driver name <em>*</em></span><input value={f.driver_name ?? ''} onChange={set('driver_name')} /><E k="driver_name" /></label>
+          <label className={`f${fe.driver_mobile ? ' bad' : ''}`}><span>Driver mobile <em>*</em></span><input type="tel" value={f.driver_mobile ?? ''} onChange={set('driver_mobile')} placeholder="050 123 4567" /><E k="driver_mobile" /></label>
+          <label className={`f${fe.planned_pickup_at ? ' bad' : ''}`}><span>Planned pickup <em>*</em></span><input type="datetime-local" value={f.planned_pickup_at} onChange={set('planned_pickup_at')} /><E k="planned_pickup_at" /></label>
+          <label className="f"><span>Delivery ETA</span><input type="datetime-local" value={f.planned_delivery_at ?? ''} onChange={set('planned_delivery_at')} /></label>
+          <label className={`f${fe.rental_cost ? ' bad' : ''}`}><span>Rental cost ({lk.currency}, excl. VAT) <em>*</em></span><input type="number" min="0" step="0.01" value={f.rental_cost ?? ''} onChange={set('rental_cost')} /><E k="rental_cost" /></label>
+          <label className="f"><span>Remarks</span><input value={f.remarks ?? ''} onChange={set('remarks')} placeholder="e.g. Own 3-ton trucks all booked" /></label>
+          <label className="small span2" style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" style={{ width: 'auto' }} checked={f.send_app_link} onChange={set('send_app_link')} />
+            Give this driver the phone app for this job (otherwise Transport updates the status and POD)</label>
+        </div>
+        <div className="actions"><button className="btn" onClick={onClose}>Back</button>
+          {manager && err && /problems|busy|already assigned/i.test(err) && can('jobs.override_conflicts') && <button className="btn danger" disabled={busy} onClick={() => save(true)}>Override and hire</button>}
+          <button className="btn primary" disabled={busy} onClick={() => save()}>{busy ? 'Saving…' : manager ? 'Hire and assign' : 'Send for approval'}</button></div>
+      </div>
+    </div>
+  );
+}
+
+/** Rental trucks on this job: approval, the hired truck and driver, and the supplier's bill. */
+function RentalPanel({ job, onChange }: { job: any; onChange: (j: any) => void }) {
+  const { lk } = useMe();
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [reject, setReject] = useState<any>(null);
+  const [bill, setBill] = useState<any>(null);
+  const [appFor, setAppFor] = useState<any>(null);
+  const list = (job.rentals ?? []).filter((x: any) => ['requested', 'approved'].includes(x.status) || x === job.rentals[0]);
+  if (!list.length) return null;
+  const act = async (id: string, body: any, after?: (j: any) => void) => {
+    setBusy(true); setErr('');
+    try { const j = await api(`/api/rentals/${id}`, { body }); onChange(j); after?.(j); setReject(null); setBill(null); }
+    catch (e: any) { setErr(e.message); }
+    setBusy(false);
+  };
+  const LABEL: Record<string, [string, string]> = { requested: ['Waiting for approval', '#B7791F'], approved: ['Approved', '#276749'],
+    rejected: ['Not approved', '#9B2C2C'], cancelled: ['Withdrawn', '#6B7280'], replaced: ['Replaced', '#6B7280'] };
+  return (
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <h2 style={{ marginTop: 0 }}>Rental truck</h2>
+      {err && <div className="msg err">{err}</div>}
+      {list.map((x: any) => <div key={x.id} className="pro-act">
+        <div className="pro-act-head"><b>{x.supplier}</b><span>— {x.vehicle_number}{x.vehicle_type ? ` (${x.vehicle_type})` : ''}</span>
+          <span className="badge" style={{ background: LABEL[x.status][1] }}>{LABEL[x.status][0]}</span><span style={{ flex: 1 }} />
+          {x.can_approve && <><button className="btn small primary" disabled={busy} onClick={() => act(x.id, { action: 'approve' }, (j) => {
+            const done = j.rentals?.find((y: any) => y.id === x.id); if (done?.send_app_link && done.driver_id) setAppFor(done); })}>Approve</button>
+            <button className="btn small danger" disabled={busy} onClick={() => setReject({ id: x.id, reason: '' })}>Reject</button></>}
+          {x.can_withdraw && !x.can_approve && <button className="btn small" disabled={busy} onClick={() => act(x.id, { action: 'withdraw' })}>Withdraw</button>}
+          {x.can_bill && <button className="btn small" onClick={() => setBill({ id: x.id, supplier_invoice_no: x.supplier_invoice_no ?? '', payment_status: x.payment_status, paid_on: x.paid_on ?? '', rental_cost: x.rental_cost })}>Bill</button>}
+          {x.status === 'approved' && x.send_app_link && x.driver_id && x.can_bill && <button className="btn small" onClick={() => setAppFor(x)}>Send app link</button>}
+        </div>
+        <dl className="kv" style={{ marginTop: 6 }}>
+          <dt>Driver</dt><dd>{x.driver_name} · <a href={`tel:${String(x.driver_mobile).replace(/[^\d+]/g, '')}`}>{x.driver_mobile}</a>{x.send_app_link ? ' · phone app' : ' · Transport updates the job'}</dd>
+          <dt>Planned</dt><dd>{fmtDateTime(x.planned_pickup_at)}{x.planned_delivery_at ? ` → ${fmtDateTime(x.planned_delivery_at)}` : ''}</dd>
+          {x.rental_cost !== undefined && <><dt>Rental cost</dt><dd><b>{fmtMoney(x.rental_cost, lk.currency)}</b>{x.status === 'approved' && <> · {x.payment_status === 'paid' ? `Paid ${x.paid_on ?? ''}` : 'Unpaid'}{x.supplier_invoice_no ? ` · invoice ${x.supplier_invoice_no}` : ''}</>}</dd></>}
+          <dt>Requested</dt><dd>{x.requested_by_name}, {fmtDateTime(x.requested_at)}{x.approved_by_name ? ` · ${x.status === 'approved' ? 'approved' : 'answered'} by ${x.approved_by_name}` : ''}</dd>
+          {x.remarks && <><dt>Remarks</dt><dd>{x.remarks}</dd></>}
+          {x.reject_reason && <><dt>Reason</dt><dd>{x.reject_reason}</dd></>}
+        </dl>
+      </div>)}
+      {reject && <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setReject(null)}><div className="modal" role="dialog" aria-label="Reject rental">
+        <h2>Reject rental truck</h2>
+        <label className="f"><span>Reason <em>*</em></span><input value={reject.reason} onChange={(e) => setReject({ ...reject, reason: e.target.value })} placeholder="e.g. Use own truck DXB 12345 instead" /></label>
+        <div className="actions"><button className="btn" onClick={() => setReject(null)}>Back</button>
+          <button className="btn danger" disabled={busy} onClick={() => act(reject.id, { action: 'reject', reason: reject.reason })}>Reject</button></div></div></div>}
+      {bill && <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setBill(null)}><div className="modal" role="dialog" aria-label="Rental bill">
+        <h2>Rental bill</h2>
+        <div className="grid g2">
+          <label className="f"><span>Rental cost ({lk.currency})</span><input type="number" min="0" step="0.01" value={bill.rental_cost} onChange={(e) => setBill({ ...bill, rental_cost: e.target.value })} /></label>
+          <label className="f"><span>Supplier invoice no.</span><input value={bill.supplier_invoice_no} onChange={(e) => setBill({ ...bill, supplier_invoice_no: e.target.value })} /></label>
+          <label className="f"><span>Payment</span><select value={bill.payment_status} onChange={(e) => setBill({ ...bill, payment_status: e.target.value })}><option value="unpaid">Unpaid</option><option value="paid">Paid</option></select></label>
+          {bill.payment_status === 'paid' && <label className="f"><span>Paid on</span><input type="date" value={bill.paid_on} onChange={(e) => setBill({ ...bill, paid_on: e.target.value })} /></label>}
+        </div>
+        <p className="muted small">Changing the cost also changes the job's transport cost.</p>
+        <div className="actions"><button className="btn" onClick={() => setBill(null)}>Back</button>
+          <button className="btn primary" disabled={busy} onClick={() => act(bill.id, { action: 'bill', ...bill })}>Save</button></div></div></div>}
+      {appFor && <SendAppLink driverId={appFor.driver_id} name={appFor.driver_name} onClose={() => setAppFor(null)} />}
+    </div>
+  );
+}
+
 export default function JobActions({ job, onChange }: { job: any; onChange: (j: any) => void }) {
   const [dialog, setDialog] = useState<any>(null);
   const [err, setErr] = useState('');
@@ -166,13 +277,14 @@ export default function JobActions({ job, onChange }: { job: any; onChange: (j: 
   const podNeeded = ['delivered', 'pod_pending'].includes(job.status_code) && ['pending', 'rejected'].includes(job.pod_status);
   const togglePod = async (v: boolean) => { try { onChange(await api(`/api/jobs/${job.id}/pod-requirement`, { body: { not_required: v } })); } catch (e: any) { setErr(e.message); } };
   const done = (j: any) => { setDialog(null); onChange(j); };
-  const any = perms.assign || forward.length || back || cancel || perms.edit_request || (perms.pod_requirement && ['pending', 'rejected', 'not_required'].includes(job.pod_status));
+  const any = perms.hire_rental || job.rentals?.length || perms.assign || forward.length || back || cancel || perms.edit_request || (perms.pod_requirement && ['pending', 'rejected', 'not_required'].includes(job.pod_status));
   if (!any) return null;
   return (
     <>
       {err && <div className="msg err">{err}</div>}
       <div className="panel" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
         {perms.assign && <button className="btn primary" onClick={() => setDialog({ kind: 'assign' })}>{job.driver_id || job.vehicle_id ? 'Change assignment' : 'Assign driver & vehicle'}</button>}
+        {perms.hire_rental && <button className="btn" onClick={() => setDialog({ kind: 'rental' })}>Hire rental truck</button>}
         {forward.map((s: any, i: number) => <button key={s.code} className={`btn${!perms.assign && i === 0 ? ' primary' : ''}`} onClick={() => setDialog({ kind: 'status', to: s })}>
           {s.code === 'pending_assignment' ? 'Submit to Transport' : `Mark ${s.name}`}</button>)}
         {perms.edit_request && <Link className="btn" href={`/jobs/${job.id}/edit`}>Edit request</Link>}
@@ -183,6 +295,8 @@ export default function JobActions({ job, onChange }: { job: any; onChange: (j: 
         {cancel && <button className="btn danger" onClick={() => setDialog({ kind: 'status', to: cancel })}>Cancel job</button>}
         {podNeeded && <span className="flag" style={{ width: '100%' }}>Delivered — waiting for the POD. Upload it in the Proof of delivery panel.</span>}
       </div>
+      {dialog?.kind === 'rental' && <RentalDialog job={job} onDone={done} onClose={() => setDialog(null)} />}
+      <RentalPanel job={job} onChange={onChange} />
       {dialog?.kind === 'assign' && <AssignDialog job={job} onDone={done} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'status' && <StatusDialog job={job} to={dialog.to} onDone={done} onClose={() => setDialog(null)} />}
     </>

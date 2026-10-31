@@ -36,9 +36,10 @@ export async function lookups(actor: Actor) {
     pod_statuses: await q('select code, name from pod_statuses where is_active order by sort_order'),
     departments: await q('select id, code, name, side from departments where is_active order by side, name'),
     my_department: actor.department_id ? { id: actor.department_id, name: actor.department_name, side: actor.department_side } : null,
-    drivers: await q(`select id, full_name name, mobile from drivers where deleted_at is null and status <> 'inactive' order by full_name`),
+    drivers: await q(`select id, full_name name, mobile from drivers where deleted_at is null and status <> 'inactive' and subcontractor_id is null order by full_name`),
+    rental_companies: await q(`select id, name, contact_number from subcontractors where deleted_at is null and is_active order by name`),
     vehicles: await q(`select v.id, v.vehicle_number name, vt.name vehicle_type from vehicles v left join vehicle_types vt on vt.id = v.vehicle_type_id
-      where v.deleted_at is null and v.status <> 'inactive' order by v.vehicle_number`),
+      where v.deleted_at is null and v.status <> 'inactive' and v.subcontractor_id is null order by v.vehicle_number`),
     expiry_warning_days: await getSetting('expiry_warning_days', 30),
     users: await q(`select u.id, u.full_name name, d.code department from users u left join departments d on d.id = u.department_id
       where u.deleted_at is null order by u.full_name`),

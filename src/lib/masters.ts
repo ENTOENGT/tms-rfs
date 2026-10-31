@@ -70,6 +70,22 @@ export const MASTERS: Record<string, MasterDef> = {
       { key: 'remarks', label: 'Remarks', type: 'longtext', max: 1000 },
     ],
   },
+  subcontractors: {
+    key: 'subcontractors', table: 'subcontractors', title: 'Rental companies', singular: 'rental company', perm: 'vehicles.manage',
+    softDelete: true, activeField: 'is_active', orderBy: 'e.name',
+    search: ['e.name', 'e.contact_person', 'e.contact_number', 'e.trn'],
+    blurb: 'Companies you hire trucks from when your own vehicles are not available. Hire one from the job page: "Hire rental truck".',
+    fields: [
+      { key: 'name', label: 'Company name', type: 'text', required: true, list: true, max: 160 },
+      { key: 'contact_person', label: 'Contact person', type: 'text', list: true, max: 120, half: true },
+      { key: 'contact_number', label: 'Phone', type: 'phone', list: true, max: 40, half: true },
+      { key: 'email', label: 'Email', type: 'email', max: 120, half: true },
+      { key: 'trn', label: 'TRN', type: 'text', list: true, max: 30, half: true },
+      { key: 'address', label: 'Address', type: 'text', max: 300 },
+      { key: 'is_active', label: 'In use', type: 'bool', list: true },
+      { key: 'remarks', label: 'Remarks', type: 'longtext', max: 1000 },
+    ],
+  },
   customers: {
     key: 'customers', table: 'customers', title: 'Customers', singular: 'customer', perm: 'customers.manage',
     softDelete: true, activeField: 'is_active', orderBy: 'e.name',
